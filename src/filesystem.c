@@ -208,6 +208,7 @@ or configs will never get loaded from disk!
 #include "cmd.h"
 #include "sys_thread.h"
 #include "plugin_handler.h"
+#include "crc.h"
 
 #include <sys/stat.h>
 #include <sys/file.h>
@@ -3723,6 +3724,47 @@ __regparm3 void DB_BuildOSPath(const char *filename, int ffdir, int len, char *b
 }
 
 
+void DB_BuildQPath(const char *filename, int ffdir, int len, char *buff)
+{
+    const char *languagestr;
+    char *mapstrend;
+    char mapname[MAX_QPATH];
+
+    switch(ffdir)
+    {
+        case 0:
+            languagestr = SEH_GetLanguageName( SEH_GetCurrentLanguage() );
+            if ( !languagestr )
+            {
+                languagestr = "english";
+            }
+
+            Com_sprintf(buff, len, "zone/%s/%s.ff", languagestr, filename);
+            return;
+
+        case 1:
+
+            Com_sprintf(buff, len, "%s/%s.ff", fs_gamedirvar->string, filename);
+            return;
+
+        case 2:
+
+            Q_strncpyz(mapname, filename, sizeof(mapname));
+            mapstrend = strstr(mapname, "_load");
+            if ( mapstrend )
+            {
+                mapstrend[0] = '\0';
+            }
+            Com_sprintf(buff, len, "%s/%s/%s.ff", "usermaps", mapname, filename);
+            return;
+        case 3:
+            Com_sprintf(buff, len, "%s.ff", filename);
+            return;
+
+    }
+}
+
+
 
 /*
 ========================================================================================
@@ -4078,5 +4120,136 @@ int FS_PureServerSetLoadedIwds(const char *paksums, const char *paknames)
       //fs_fakeChkSum = 0;
     }
     return rt;
+}
+
+
+#define SERVERFILECHKSUMPERFILE 256
+
+typedef struct
+{
+    char qpath[MAX_QPATH];
+    int length;
+    int sums[SERVERFILECHKSUMPERFILE];
+    int sum;
+}fs_crcsum_t;
+
+#define SERVERFILECHKSUMBLOCKSIZE 2*1024*1024
+#define SERVERFILEMAXCHKSUM 512
+
+
+
+typedef struct
+{
+    fs_crcsum_t sums[SERVERFILEMAXCHKSUM];
+    fs_crcsum_t *hash[SERVERFILEMAXCHKSUM << 2];
+}fs_crcsums_t;
+
+fs_crcsums_t fscrcsums;
+
+fs_crcsum_t* FS_FindChecksumForFile(const char* filename, int len)
+{
+
+    int i;
+
+    for(i = 0; i < SERVERFILEMAXCHKSUM; ++i)
+    {
+
+        if(strcmp(filename, fscrcsums.sums[i].qpath) == 0)
+        {
+            if(fscrcsums.sums[i].length != len)
+            {
+                Com_Memset(&fscrcsums.sums[i], 0, sizeof(fs_crcsums_t));
+            }
+            return &fscrcsums.sums[i];
+        }
+
+        if(fscrcsums.sums[i].length == 0)
+        {
+            return &fscrcsums.sums[i];
+        }
+
+    }
+    Com_PrintError("Exceeded number of maximum files for checksumming\n");
+    Com_Memset(&fscrcsums.sums[SERVERFILEMAXCHKSUM / 2 -1], 0, sizeof(fscrcsums.sums) / 2);
+
+    return &fscrcsums.sums[SERVERFILEMAXCHKSUM / 2 -1];
+}
+
+
+int FS_CalculateChecksumForFile(const char* filename, int *crc32)
+{
+    int blockSize, len, i;
+    fileHandle_t fh;
+    byte block[SERVERFILECHKSUMBLOCKSIZE];
+    fs_crcsum_t* chksums;
+
+    *crc32 = 0;
+
+    len = FS_SV_FOpenFileRead( filename, &fh );
+
+    if(len <= 0)
+    {
+        return len;
+    }
+
+    chksums = FS_FindChecksumForFile(filename, len);
+
+    if(chksums->length != len)
+    {
+        i = 0;
+        do
+        {
+            blockSize = FS_Read( block, sizeof(block), fh );
+            *crc32 = crc32_16bytes(  block, blockSize, *crc32 );
+            chksums->sums[i] = crc32_16bytes( block, blockSize, 0 );
+            ++i;
+        }while(blockSize > 0 && i < SERVERFILECHKSUMPERFILE);
+        chksums->length = len;
+        chksums->sum = *crc32;
+        Q_strncpyz(chksums->qpath, filename, sizeof(chksums->qpath));
+        fscrcsums.hash[FS_HashFileName(chksums->qpath, sizeof(fscrcsums.hash) / sizeof(fs_crcsum_t*))] = chksums;
+    }else{
+        *crc32 = chksums->sum;
+    }
+    FS_FCloseFile(fh);
+
+    return len;
+}
+
+int FS_WriteChecksumInfo(const char* filename, byte* data, int maxsize)
+{
+    int i;
+
+    fs_crcsum_t* chksums = fscrcsums.hash[FS_HashFileName(filename, sizeof(fscrcsums.hash) / sizeof(fs_crcsum_t*))];
+
+    if(chksums == NULL || chksums->length == 0)
+    {
+        return 0;
+    }
+    if(maxsize < sizeof(fs_crcsum_t))
+    {
+        Com_PrintError("FS_WriteChecksumInfo(): Insufficient buffer size. Expected %d but got %d\n", sizeof(fs_crcsum_t), maxsize);
+        return 0;
+    }
+    if(strcmp(chksums->qpath, filename) == 0)
+    {
+        Com_Printf("Writing %s len %d\n", chksums->qpath, chksums->length);
+        Com_Memcpy(data, chksums, sizeof(fs_crcsum_t));
+        return sizeof(fs_crcsum_t);
+    }
+
+    //Search via hash has failed. Doing slow search
+    for(i = 0; i < SERVERFILEMAXCHKSUM; ++i)
+    {
+        if(strcmp(filename, fscrcsums.sums[i].qpath) == 0)
+        {
+
+            Com_Memcpy(data, &fscrcsums.sums[i], sizeof(fs_crcsum_t));
+            return sizeof(fs_crcsum_t);
+        }
+    }
+    //Slow search did not generate results :/
+    return 0;
+
 }
 

@@ -71,7 +71,7 @@ void dMessage (int num, const char *msg, ...);
 void* __cdecl yy_create_buffer(FILE *file, int bufferSize);
 void Com_StdErrorStub(int e, const char* fmt, ...);
 void __regparm3 VM_Notify_Hook(int, int, void*);
-
+unsigned int PushGroundEnt();
 static void __cdecl Cbuf_AddText_Wrapper_IW(int dummy, const char *text )
 {
     Cbuf_AddText( text );
@@ -146,11 +146,14 @@ static byte patchblock_SV_SpawnServer[] = { 0x7E, 0x4A, 0x17, 0x8,
 	0xeb, 0x5c
 };*/
 //NET_OutOfBandPrint prototype got changed from netadr_t to netadr_t* The remaining hooks should get fixed up by this:
+/*
 static byte patchblock_NET_OOB_CALL1[] = { 0x75, 0x50, 0x17, 0x8,
 	0xC7, 0x44, 0x24, 0x8, 0xE8, 0x18, 0x23, 0x8, 0x8D, 0x43, 0x20, 0x89, 0x44, 0x24, 0x4, 0xe8, 
 	0x2a, 0x19, 0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 
 	0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90
 };
+*/
+
 
 static byte patchblock_NET_OOB_CALL2[] = { 0xB3, 0x69, 0x17, 0x8,
 	0x81, 0x3D, 0x84, 0x4F, 0xB, 0x9, 0x7F, 0x0A, 0x0, 0x0, 0x7F, 0x1, 0xC3, 0x55, 0x57, 0x56, 
@@ -202,6 +205,7 @@ static byte patchblock_NET_OOB_CALL4[] = { 0x9B, 0x53, 0x17, 0x8,
 
 
 	Sys_PatchImageWithBlock(patchblock_01, sizeof(patchblock_01));
+
 	Sys_PatchImageWithBlock(patchblock_Pmove_GetSpeed, sizeof(patchblock_Pmove_GetSpeed));
 	Sys_PatchImageWithBlock(patchblock_Pmove_GetGravity, sizeof(patchblock_Pmove_GetGravity));
 	Sys_PatchImageWithBlock(patchblock_ClientConnect_NoPassword, sizeof(patchblock_ClientConnect_NoPassword));
@@ -217,7 +221,8 @@ static byte patchblock_NET_OOB_CALL4[] = { 0x9B, 0x53, 0x17, 0x8,
 	Com_Memset((void*)0x8174b9b, 0x90, 116); //In SV_SpawnServer()  Removal of sv_maxclients amd ui_maxclients Cvar_Register()
 	Com_Memset((void*)0x8204acf, 0x90, 16); //In ???() Skip useless check for cvar: sv_dedicated
 	Com_Memset((void*)0x8204ce9, 0x90, 16); //In ???() Skip useless check for cvar: sv_dedicated
-	Sys_PatchImageWithBlock(patchblock_NET_OOB_CALL1, sizeof(patchblock_NET_OOB_CALL1));
+        Com_Memset((void*)0x8175055, 0x90, 101);
+/*	Sys_PatchImageWithBlock(patchblock_NET_OOB_CALL1, sizeof(patchblock_NET_OOB_CALL1));*/
 	Sys_PatchImageWithBlock(patchblock_NET_OOB_CALL2, sizeof(patchblock_NET_OOB_CALL2));
 	Sys_PatchImageWithBlock(patchblock_NET_OOB_CALL3, sizeof(patchblock_NET_OOB_CALL3));
 	Sys_PatchImageWithBlock(patchblock_NET_OOB_CALL4, sizeof(patchblock_NET_OOB_CALL4));
@@ -239,7 +244,7 @@ static byte patchblock_DB_LOADXASSETS[] = { 0x8a, 0x64, 0x20, 0x8,
 		Com_Memset((void*)0x81751fe, 0x90, 5);
 		
 	#endif
-	
+	SetCall(0x8175055, SV_SpawnServerResetPlayers);
 	SetCall(0x8050ab1, Jump_CalcHeight);
 	SetJump(0x8050786, Jump_IsPlayerAboveMax);
 	SetJump(0x80507c6, Jump_ClampVelocity);
@@ -380,6 +385,9 @@ static byte patchblock_DB_LOADXASSETS[] = { 0x8a, 0x64, 0x20, 0x8,
 	/* Kill the function DB_AddUserMapDir */
 	*(byte*)0x8204bc8 = 0xc3;
 	*(byte*)0x810f6b4 = 0xcc;
+	*(byte*)0x8176a31 = 0x51;
+
+//	SetCall(0x805b387, PushGroundEnt);
 }
 
 

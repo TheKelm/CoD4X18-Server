@@ -45,11 +45,8 @@
 
 #define	PORT_SERVER		28960
 
-#ifndef COD4X17A
-    #define	PROTOCOL_VERSION	8
-#else
-    #define	PROTOCOL_VERSION	6
-#endif
+#define	PROTOCOL_VERSION	9
+#define	LEGACY_PROTOCOL_VERSION	6
 
 #define MAX_MSGLEN 0x20000
 
@@ -66,7 +63,9 @@ enum svc_ops_e {
 	svc_serverCommand,          // [string] to be executed by client game module
 	svc_download,               // [short] size [size bytes]
 	svc_snapshot,
-	svc_EOF
+	svc_EOF,
+	svc_steamcommands,
+	svc_statscommands
 };
 
 
@@ -80,7 +79,11 @@ enum clc_ops_e {
 	clc_clientCommand,      // [string] message
 	clc_EOF,
 	clc_nop,
-	clc_steamData
+	clc_download,
+	clc_empty1,
+	clc_empty2,
+	clc_steamcommands,
+	clc_statscommands
 };
 
 #endif

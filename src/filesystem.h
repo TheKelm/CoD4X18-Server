@@ -234,9 +234,12 @@ qboolean FS_FileExistsOSPath( const char *ospath );
 void FS_RenameOSPath( const char *from_ospath, const char *to_ospath );
 qboolean FS_SetPermissionsExec(const char* ospath);
 __regparm3 void DB_BuildOSPath(const char *filename, int ffdir, int len, char *buff);
+void DB_BuildQPath(const char *filename, int ffdir, int len, char *buff);
 int     FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode );
 void __cdecl FS_ReferencedIwds(char **outChkSums, char **outPathNames);
 void FS_AddIwdPureCheckReference(searchpath_t *search);
 void FS_StripTrailingSeperator( char *path );
+int FS_CalculateChecksumForFile(const char* filename, int *crc32);
+int FS_WriteChecksumInfo(const char* filename, byte* data, int maxsize);
 #endif
 

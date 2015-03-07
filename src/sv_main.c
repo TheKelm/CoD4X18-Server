@@ -42,6 +42,7 @@
 #include "xassets.h"
 #include "nvconfig.h"
 #include "hl2rcon.h"
+#include "crc.h"
 
 #ifndef COD4X17A
 #include "sapi.h"
@@ -1955,7 +1956,7 @@ __optimize3 __regparm2 void SV_PacketEvent( netadr_t *from, msg_t *msg ) {
 	// zombie clients still need to do the Netchan_Process
 	// to make sure they don't need to retransmit the final
 	// reliable message, but they don't do any other processing
-	cl->serverId = MSG_ReadByte( msg );
+	cl->serverId = MSG_ReadLong( msg );
 	cl->messageAcknowledge = MSG_ReadLong( msg );
 
 	if(cl->messageAcknowledge < 0){
@@ -2735,120 +2736,6 @@ typedef struct{
 
 void SV_WriteGameState( msg_t* msg, client_t* cl ) {
 
-	char* cs;
-	int i, edi, ebx, numConfigstrings, esi, var_03, clnum;
-	entityState_t nullstate, *base;
-	snapshotInfo_t snapInfo;
-	constConfigstring_t *gsbase = constantConfigstrings;
-	constConfigstring_t *gsindex;
-	unsigned short strindex;
-
-	MSG_WriteByte( msg, svc_gamestate );
-	MSG_WriteLong( msg, cl->reliableSequence );
-	MSG_WriteByte( msg, svc_configstring );
-
-	for ( esi = 0, numConfigstrings = 0, var_03 = 0 ; esi < MAX_CONFIGSTRINGS ; esi++) {
-
-		strindex = sv.configstringIndex[esi];
-		gsindex = &gsbase[var_03];
-
-		if(gsindex->index != esi){
-
-			if(strindex != sv.unkConfigIndex)
-				numConfigstrings++;
-
-			continue;
-		}
-
-		cs = SL_ConvertToString(strindex);
-
-		if(gsindex->index > 820){
-			if(Q_stricmp(gsindex->string, cs))
-			{
-				numConfigstrings++;
-			}
-		}else{
-			if(strcmp(gsindex->string, cs))
-			{
-				numConfigstrings++;
-			}
-		}
-		var_03++;
-	}
-	MSG_WriteShort(msg, numConfigstrings);
-
-	for ( ebx = 0, edi = -1, var_03 = 0 ; ebx < MAX_CONFIGSTRINGS ; ebx++) {
-
-		gsindex = &gsbase[var_03];
-		strindex = sv.configstringIndex[ebx];
-
-		if(gsindex->index == ebx){
-					//ebx and gsindex->index are equal
-			var_03++;
-
-			cs = SL_ConvertToString(strindex);
-
-			if(ebx > 820){
-				if(!Q_stricmp(gsindex->string, cs))
-				{
-					continue;
-				}
-			}else{
-				if(!strcmp(gsindex->string, cs))
-				{
-					continue;
-				}
-			}
-
-			if(sv.unkConfigIndex == strindex)
-			{
-				MSG_WriteBit0(msg);
-				MSG_WriteBits(msg, gsindex->index, 12);
-				MSG_WriteBigString(msg, "");
-				edi = ebx;
-				continue;
-			}
-		}
-
-		strindex = sv.configstringIndex[ebx];
-		if(sv.unkConfigIndex != strindex)
-		{
-			if(edi+1 == ebx){
-
-				MSG_WriteBit1(msg);
-			}else{
-				MSG_WriteBit0(msg);
-				MSG_WriteBits(msg, ebx, 12);
-			}
-			MSG_WriteBigString(msg, SL_ConvertToString(strindex));
-		}
-	}
-	Com_Memset( &nullstate, 0, sizeof( nullstate ) );
-	clnum = cl - svs.clients;
-	// baselines
-	for ( i = 0; i < MAX_GENTITIES ; i++ )
-	{
-		base = &sv.svEntities[i].baseline;
-		if ( !base->number ) {
-			continue;
-		}
-		MSG_WriteByte( msg, svc_baseline );
-
-		snapInfo.clnum = clnum;
-		snapInfo.cl = NULL;
-		snapInfo.var_01 = 0xFFFFFFFF;
-		snapInfo.var_02 = qtrue;
-
-		MSG_WriteDeltaEntity( &snapInfo, msg, 0, &nullstate, base, qtrue );
-	}
-	MSG_WriteByte( msg, svc_EOF );
-
-}
-
-/*
-
-void SV_WriteGameState( msg_t* msg, client_t* cl ) {
-
 	int i, numConfigstrings, clnum;
 	entityState_t nullstate, *base;
 	snapshotInfo_t snapInfo;
@@ -2866,7 +2753,7 @@ void SV_WriteGameState( msg_t* msg, client_t* cl ) {
 			numConfigstrings++;
 		}
 	}
-	MSG_WriteShort(msg, numConfigstrings);
+	MSG_WriteLong(msg, numConfigstrings);
 
 	for ( i = 0 ; i < MAX_CONFIGSTRINGS ; i++)
 	{
@@ -2877,10 +2764,8 @@ void SV_WriteGameState( msg_t* msg, client_t* cl ) {
 		{
 			continue;
 		}
-		MSG_WriteBit0(msg);
-		MSG_WriteBits(msg, i, 12);
+		MSG_WriteLong(msg, i);
 		MSG_WriteBigString(msg, SL_ConvertToString(strindex));
-		Com_Printf("CS %d: %s\n", i, SL_ConvertToString(strindex));
 	}
 	Com_Memset( &nullstate, 0, sizeof( nullstate ) );
 	clnum = cl - svs.clients;
@@ -2903,7 +2788,6 @@ void SV_WriteGameState( msg_t* msg, client_t* cl ) {
 
 }
 
-*/
 /*
 ================
 SV_RconStatusWrite
@@ -3095,6 +2979,9 @@ void SV_PreLevelLoad(){
 	onExitLevelExecuted = qfalse;
 
 	SV_RemoveAllBots();
+
+	FS_ShutdownIwdPureCheckReferences();
+
 	SV_ReloadBanlist();
 
 	NV_LoadConfig();
@@ -3131,6 +3018,16 @@ void SV_PostLevelLoad(){
 	sv.serverId = com_frameTime;
 }
 
+void SV_BuildXAssetCSString()
+{
+	char cs[MAX_STRING_CHARS];
+	char list[MAX_STRING_CHARS];
+
+	DB_BuildOverallocatedXAssetList(list, sizeof(list));
+	Com_sprintf(cs, sizeof(cs), "cod%d %s", PROTOCOL_VERSION, list);
+	SV_SetConfigstring(2, cs);
+}
+
 void SV_LoadLevel(const char* levelname)
 {
 	char mapname[MAX_QPATH];
@@ -3140,14 +3037,9 @@ void SV_LoadLevel(const char* levelname)
 	SV_PreLevelLoad();
 	SV_SpawnServer(mapname);
 
-#ifndef COD4X17A
-	char cs[MAX_STRING_CHARS];
-	char list[MAX_STRING_CHARS];
-	DB_BuildOverallocatedXAssetList(list, sizeof(list));
-	Com_sprintf(cs, sizeof(cs), "cod%d %s", PROTOCOL_VERSION, list);
-	SV_SetConfigstring(2, cs);
-#endif
+	SV_BuildXAssetCSString();
 
+	SV_CalculateChecksums();
 	SV_PostLevelLoad();
 }
 
@@ -3261,7 +3153,7 @@ void SV_MapRestart( qboolean fastRestart ){
 		}
 
 		// add the map_restart command
-		NET_OutOfBandPrint( NS_SERVER, &client->netchan.remoteAddress, "fast_restart" );
+		NET_OutOfBandPrint( NS_SERVER, &client->netchan.remoteAddress, "fastrestart" );
 	}
 
 	SV_InitCvars();
@@ -3279,7 +3171,7 @@ void SV_MapRestart( qboolean fastRestart ){
 	sv.restarting = qtrue;
 
 	SV_RestartGameProgs(pers);
-
+	SV_BuildXAssetCSString();
 	// run a few frames to allow everything to settle
 	for ( i = 0 ; i < 3 ; i++ ) {
 		svs.time += 100;
@@ -3510,6 +3402,10 @@ __optimize3 __regparm1 qboolean SV_Frame( unsigned int usec ) {
 		G_RunFrame( svs.time );
 	}
 
+#ifndef COD4X17A
+	SV_RunSApiFrame();
+#endif
+
 	// send messages back to the clients
 	SV_SendClientMessages();
 
@@ -3524,9 +3420,6 @@ __optimize3 __regparm1 qboolean SV_Frame( unsigned int usec ) {
 	// send a heartbeat to the master if needed
 	SV_MasterHeartbeat( HEARTBEAT_GAME );
 	
-#ifndef COD4X17A
-	SV_RunSApiFrame();
-#endif
 	
 #ifdef PUNKBUSTER
 	PbServerProcessEvents( 0 );
@@ -3746,3 +3639,65 @@ void SV_ShowClientUnAckCommands( client_t *client )
 	Com_Printf("-----------------------------------------------------\n");
 }
 
+
+
+void SV_SpawnServerResetPlayers()
+{
+	client_t* cl;
+	int i;
+
+	for(i = 0, cl = svs.clients; i < sv_maxclients->integer; ++cl, ++i)
+	{
+		cl->receivedstats = 0;
+		cl->gamestateSent = 0;
+	}
+}
+
+
+void SV_CalculateChecksums()
+{
+    int i;
+    char filename[MAX_OSPATH];
+    char* str;
+    int len, crc32;
+
+    Com_Printf("^4Calculate referenced files checksums...\n");
+    Cmd_TokenizeString(sv_referencedIwdNames->string);
+
+    for(i = 0; i < Cmd_Argc(); ++i)
+    {
+        Com_sprintf(filename, sizeof(filename), "%s.iwd", Cmd_Argv(i));
+        len = FS_CalculateChecksumForFile(filename, &crc32);
+        Com_Printf("^4CRC32 for %s is %x Len %d\n", filename, crc32, len);
+    }
+    Cmd_EndTokenizedString();
+
+    Cmd_TokenizeString(sv_referencedFFNames->string);
+
+    for(i = 0; i < Cmd_Argc(); ++i)
+    {
+
+        DB_BuildQPath(Cmd_Argv(i), 0, sizeof(filename), filename);
+
+        if((len = FS_CalculateChecksumForFile(filename, &crc32)) <= 0)
+        {
+            DB_BuildQPath(Cmd_Argv(i), 3, sizeof(filename), filename);
+            if((len = FS_CalculateChecksumForFile(filename, &crc32)) <= 0)
+            {
+                str = Cmd_Argv(i);
+                DB_BuildQPath(str +9, 2, sizeof(filename), filename);
+                len = FS_CalculateChecksumForFile(filename, &crc32);
+            }
+        }
+        Com_Printf("^4CRC32 for %s is %x Len %d\n", filename, crc32, len);
+    }
+
+    Cmd_EndTokenizedString();
+}
+
+
+void SV_WriteChecksumInfo(msg_t* msg, const char* filename)
+{
+    MSG_WriteLong(msg, 0);
+    msg->cursize += FS_WriteChecksumInfo(filename, msg->data + msg->cursize, msg->maxsize - msg->cursize);
+}

@@ -49,16 +49,9 @@
 #include <stdarg.h>
 #include <string.h>
 
-//AntiDoS
-/*
-int SV_ChallengeCookies(netadr_t from){
-    char string[128];
-    int var_01 = svs.time & 0xff000000;
-    Com_sprintf(string, sizeof(string), "");
-    return var_01;
 
-}
-*/
+static void SV_CloseDownload( client_t *cl );
+
 /*
 =================
 SV_GetChallenge
@@ -334,6 +327,8 @@ __optimize3 __regparm1 void SV_GetChallenge(netadr_t *from)
 			{
 				svse.authorizeAddress.port = BigShort( PORT_AUTHORIZE );
 				Com_Printf( "%s resolved to %s\n", AUTHORIZE_SERVER_NAME, NET_AdrToString(&svse.authorizeAddress));
+			}else{
+				svse.authorizeAddress.type = NA_DOWN;
 			}
 		}
 		if(svse.authorizeAddress.type == NA_IP && from->type == NA_IP && NET_CompareBaseAdr(from, &svse.authorizeAddress))
@@ -435,9 +430,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 							(sv_reconnectlimit->integer - (reconnectTime / 1000)));
 				return;
 			}else{
-				if(cl->state > CS_ZOMBIE){	//Free up used CGame-Resources first
-					SV_FreeClient( cl );
-				}
+				SV_DropClient( cl, "silent" );
 				newcl = cl;
 				Com_Printf("reconnected: %s\n", NET_AdrToString(from));
 				cl->lastConnectTime = svs.time;
@@ -967,19 +960,10 @@ void SV_UserinfoChanged( client_t *cl ) {
 	{
 #endif
 		// name for C code
-		Q_strncpyz( cl->name, Info_ValueForKey (cl->userinfo, "name"), sizeof(cl->name) );	
-		if(!Q_isprintstring(cl->name) || strstr(cl->name,"ID_") || strstr(cl->name,"///") || Q_PrintStrlen(cl->name) < 3){
-			if(cl->state == CS_ACTIVE){
-				if(!Q_isprintstring(cl->name)) SV_SendServerCommand(cl, "c \"^5Playernames can not contain advanced ASCII-characters\"");
-				if(strlen(cl->name) < 3) SV_SendServerCommand(cl, "c \"^5Playernames can not be shorter than 3 characters\"");
-			}
-			if(cl->uid <= 0){
-				Com_sprintf(cl->name, 16, "CID_%i", cl - svs.clients);
-				cl->usernamechanged = UN_NEEDUID;
-			} else {
-				Com_sprintf(cl->name, 16, "ID_%i:%i", cl->uid / 100000000, cl->uid % 100000000);
-				cl->usernamechanged = UN_OK;
-			}
+		Q_strncpyz( cl->name, Info_ValueForKey (cl->userinfo, "name"), sizeof(cl->name) );
+		if(!Q_isprintstring(cl->name) || strstr(cl->name,"&&") || strstr(cl->name,"///")){
+			Com_sprintf(cl->name, 16, "CID_%i", cl - svs.clients);
+			cl->usernamechanged = UN_NEEDUID;
 			Info_SetValueForKey( cl->userinfo, "name", cl->name);
 		}else{
 			cl->usernamechanged = UN_VERIFYNAME;
@@ -1111,7 +1095,7 @@ __cdecl void SV_DropClient( client_t *drop, const char *reason ) {
 		SV_EnterLeaveLog("^4Client %s %s ^4left this server from slot %d with guid %s", drop->name, NET_AdrToString(&drop->netchan.remoteAddress), clientnum, drop->pbguid);
 
 	SV_FreeClient(drop);
-
+	SV_CloseDownload(drop);
 	G_DestroyAdsForPlayer(drop);
 
 #ifdef COD4X17A
@@ -1142,13 +1126,13 @@ __cdecl void SV_DropClient( client_t *drop, const char *reason ) {
 	SV_NotifySApiDisconnect(drop);
 #endif
 
+	Com_Printf("Player %s^7, %i dropped: %s\n", clientName, clientnum, reason);
+	HL2Rcon_EventClientLeave(clientnum);
+	PHandler_Event(PLUGINS_ONPLAYERDC, drop, reason);	// Plugin event
+
 	if(!Q_stricmp(reason, "silent")){
 		//Just disconnect him and don't tell anyone about it
-		Com_Printf("Player %s^7, %i dropped: %s\n", clientName, clientnum, reason);
 		drop->state = CS_ZOMBIE;        // become free in a few seconds
-
-		HL2Rcon_EventClientLeave(clientnum);
-		PHandler_Event(PLUGINS_ONPLAYERDC, drop, reason);	// Plugin event
 		return;
 	}
 
@@ -1168,9 +1152,6 @@ __cdecl void SV_DropClient( client_t *drop, const char *reason ) {
 
 	// tell everyone why they got dropped
 	SV_SendServerCommand(NULL, "%c \"\x15%s^7 %s%s\"\0", 0x65, clientName, var_01, dropreason);
-
-	Com_Printf("Player %s^7, %i dropped: %s\n", clientName, clientnum, dropreason);
-
 	SV_SendServerCommand_IW(NULL, 1, "%c %d", 0x4b, clientnum);
 
 	// add the disconnect command
@@ -1188,10 +1169,6 @@ __cdecl void SV_DropClient( client_t *drop, const char *reason ) {
 		drop->state = CS_ZOMBIE;        // become free in a few seconds
 		Com_DPrintf( "Going to CS_ZOMBIE for %s\n", clientName );
 	}
-
-	HL2Rcon_EventClientLeave(clientnum);
-
-	PHandler_Event(PLUGINS_ONPLAYERDC,(void*)drop);	// Plugin event
 
 
 	// if this was the last client on the server, send a heartbeat
@@ -1565,8 +1542,6 @@ sharedEntity_t* SV_AddBotClient(){
 	cl->canNotReliable = 1;
         //Let enter our new bot the game
 
-//	SV_SendClientGameState(cl);
-
 	Com_Memset(&ucmd, 0, sizeof(ucmd));
 
 	SV_ClientEnterWorld(cl, &ucmd);
@@ -1684,6 +1659,15 @@ void SV_SetUid(unsigned int clnum, unsigned int uid){
 }
 
 
+typedef enum
+{
+    DLSUBCMD_SERVERDL,
+    DLSUBCMD_FILEINIT,
+    DLSUBCMD_WWWRD,
+    DLSUBCMD_FAIL
+}downloadSubcommands_t;
+
+
 /*
 ==================
 SV_WWWRedirect
@@ -1700,8 +1684,7 @@ void SV_WWWRedirect(client_t *cl, msg_t *msg){
 
     cl->wwwDownloadStarted = qtrue;
 
-    MSG_WriteByte(msg, svc_download);
-    MSG_WriteLong(msg, -1);
+    MSG_WriteByte( msg, DLSUBCMD_WWWRD ); //SubCommand
     MSG_WriteString(msg, cl->wwwDownloadURL);
     MSG_WriteLong(msg, cl->downloadSize);
     MSG_WriteLong(msg, (int32_t)sv_wwwDlDisconnected->boolean);
@@ -1717,6 +1700,7 @@ void SV_WWWRedirect(client_t *cl, msg_t *msg){
 }
 
 
+
 /*
 ==================
 SV_WriteDownloadToClient
@@ -1726,29 +1710,36 @@ Fill up msg with data
 ==================
 */
 
-__cdecl void SV_WriteDownloadToClient( client_t *cl, msg_t *msg ) {
-	int curindex;
+__cdecl void SV_WriteDownloadToClient( client_t *cl ) {
 	char errorMessage[1024];
+	byte downloadBlock[0xffff];
+	int blockSize, filepos, remaining;
+	msg_t msg;
+	byte data[0xffff + 64];
 
 	if ( !*cl->downloadName ) {
 		return; // Nothing being downloaded
 	}
 
-	if ( cl->wwwDl_var02 ) {
+	if ( cl->wwwDlAck ) {
 		return;
 	}
 
 	if ( !cl->download ) {
 		// We open the file here
-
 		// DHM - Nerve
 		// CVE-2006-2082
 		// validate the download against the list of pak files
 		if ( !FS_VerifyPak( cl->downloadName ) ) {
-			// will drop the client and leave it hanging on the other side. good for him
+   			// will drop the client and leave it hanging on the other side. good for him
 			SV_DropClient( cl, "illegal download request" );
 			return;
 		}
+
+		MSG_Init(&msg, data, sizeof(data));
+		MSG_WriteLong( &msg, 0 ); //Size = 0
+		MSG_WriteLong( &msg, svc_download );
+
 
 		if ( !sv_allowDownload->integer || ( cl->downloadSize = FS_SV_FOpenFileRead( cl->downloadName, &cl->download ) ) <= 0 ) {
 			// cannot auto-download file
@@ -1765,10 +1756,9 @@ __cdecl void SV_WriteDownloadToClient( client_t *cl, msg_t *msg ) {
 				Com_Printf( "clientDownload: %d : \"%s\" file not found on server\n", cl - svs.clients, cl->downloadName );
 				Com_sprintf( errorMessage, sizeof( errorMessage ), "EXE_AUTODL_FILENOTONSERVER\x15%s", cl->downloadName );
 			}
-			MSG_WriteByte( msg, svc_download );
-			MSG_WriteLong( msg, 0 ); // client is expecting block zero
-			MSG_WriteLong( msg, -1 ); // illegal file size
-			MSG_WriteString( msg, errorMessage );
+			MSG_WriteByte( &msg, DLSUBCMD_FAIL ); //SubCommand
+			MSG_WriteString( &msg, errorMessage );
+			SV_SendReliableServerCommand(cl, &msg);
 
 			cl->wwwDl_var01 = 0;
 			if(cl->download){
@@ -1776,6 +1766,7 @@ __cdecl void SV_WriteDownloadToClient( client_t *cl, msg_t *msg ) {
 			}
 			cl->download = 0;
 			*cl->downloadName = 0;
+
 			return;
 		}
 
@@ -1786,129 +1777,86 @@ __cdecl void SV_WriteDownloadToClient( client_t *cl, msg_t *msg ) {
 				cl->wwwDl_var03 = 0;
 				return;
 			}
-			SV_WWWRedirect(cl, msg);
+			MSG_WriteByte(&msg, DLSUBCMD_FILEINIT);
+			MSG_WriteLong(&msg, cl->downloadSize);
+			SV_WriteChecksumInfo(&msg, cl->downloadName);
+			SV_SendReliableServerCommand(cl, &msg);
+
+			MSG_Clear(&msg);
+			MSG_WriteLong( &msg, 0 ); //Size = 0
+			MSG_WriteLong( &msg, svc_download );
+			SV_WWWRedirect(cl, &msg);
+			SV_SendReliableServerCommand(cl, &msg);
 			return;
 		}
 
 		// Init
 		cl->downloadCurrentBlock = cl->downloadClientBlock = cl->downloadXmitBlock = 0;
 		cl->downloadCount = 0;
-		cl->downloadEOF = qfalse;
-
+		//No block has been requested yet - waiting for client to tell which block it wants
+		cl->downloadEOF = qtrue;
+		cl->downloadNumBytes = 0;
+		cl->downloadBeginOffset = 0;
 		cl->wwwDownloadStarted = 0;
+
+		MSG_WriteByte(&msg, DLSUBCMD_FILEINIT);
+		MSG_WriteLong(&msg, cl->downloadSize);
+		SV_WriteChecksumInfo(&msg, cl->downloadName);
+		SV_SendReliableServerCommand(cl, &msg);
+		return;
 	}
 
-	while ( cl->downloadCurrentBlock - cl->downloadClientBlock < MAX_DOWNLOAD_WINDOW && cl->downloadSize != cl->downloadCount ) {
-
-		curindex = ( cl->downloadCurrentBlock % MAX_DOWNLOAD_WINDOW );
-
-		// Perform any reads that we need to
-		if ( !cl->downloadBlocks[curindex] ) {
-			cl->downloadBlocks[curindex] = Z_Malloc( MAX_DOWNLOAD_BLKSIZE);
-			if ( !cl->downloadBlocks[curindex]) {//Crash fix for download subsystem
-				SV_DropClient(cl, "Failed to allocate a new chunk of memory for the serverdownloadsystem");
-				return;
-			}
-		}
-
-		cl->downloadBlockSize[curindex] = FS_Read( cl->downloadBlocks[curindex], MAX_DOWNLOAD_BLKSIZE, cl->download );
-
-		if ( cl->downloadBlockSize[curindex] < 0 ) {
-			// EOF right now
-			cl->downloadCount = cl->downloadSize;
-			break;
-		}
-
-		cl->downloadCount += cl->downloadBlockSize[curindex];
-
-		// Load in next block
-		cl->downloadCurrentBlock++;
+	if(cl->downloadEOF)
+	{
+		return;
 	}
 
-	// Check to see if we have eof condition and add the EOF block
-	if (cl->downloadCount == cl->downloadSize && !cl->downloadEOF && cl->downloadCurrentBlock - cl->downloadClientBlock < MAX_DOWNLOAD_WINDOW ) {
 
-		cl->downloadBlockSize[cl->downloadCurrentBlock % MAX_DOWNLOAD_WINDOW] = 0;
-		cl->downloadCurrentBlock++;
+	cl->downloadBlockSize = 900;
+	if(cl->downloadBlockSize > sizeof(downloadBlock))
+	{
+		cl->downloadBlockSize = sizeof(downloadBlock);
+	}
 
+	remaining = cl->downloadBeginOffset + cl->downloadNumBytes - cl->downloadCount;
+
+	filepos = cl->downloadCount;
+
+	//No data to download - EOF
+	if(cl->downloadNumBytes <= 0 || remaining <= 0)
+	{
 		cl->downloadEOF = qtrue;  // We have added the EOF block
-	}
+		blockSize = 0;
+	}else{
+		if(remaining < cl->downloadBlockSize)
+		{
+			cl->downloadBlockSize = remaining;
+		}
 
-
-
-	// Write out the next section of the file, if we have already reached our window,
-	// automatically start retransmitting
-
-	if ( cl->downloadClientBlock == cl->downloadCurrentBlock ) {
-		return; // Nothing to transmit
-
-	}
-	if ( cl->downloadXmitBlock == cl->downloadCurrentBlock ) {
-	// We have transmitted the complete window, should we start resending?
-
-		//FIXME:  This uses a hardcoded one second timeout for lost blocks
-		//the timeout should be based on client rate somehow
-		if ( svs.time - cl->downloadSendTime > 1000 ) {
-			cl->downloadXmitBlock = cl->downloadClientBlock;
-		} else {
-			return;
+		blockSize = FS_Read( downloadBlock, cl->downloadBlockSize, cl->download );
+		if ( blockSize <= 0 ) {
+			// EOF right now
+			cl->downloadEOF = qtrue;  // We have added the EOF block
+			blockSize = 0;
+			filepos = cl->downloadCount;
+		}else{
+			cl->downloadCount += blockSize;
 		}
 	}
 
-	// Send current block
-	curindex = ( cl->downloadXmitBlock % MAX_DOWNLOAD_WINDOW );
+	MSG_Init(&msg, data, sizeof(data));
+	MSG_WriteLong( &msg, 0 ); //Size = 0
+	MSG_WriteLong( &msg, svc_download );
+	MSG_WriteByte( &msg, DLSUBCMD_SERVERDL ); //SubCommand
+	MSG_WriteLong( &msg, filepos );
+	MSG_WriteShort( &msg, blockSize );
+	MSG_WriteData( &msg, downloadBlock, blockSize );
 
-	MSG_WriteByte( msg, svc_download );
-	MSG_WriteLong( msg, cl->downloadXmitBlock );
-
-	// block zero is special, contains file size
-	if ( cl->downloadXmitBlock == 0 ) {
-		MSG_WriteLong( msg, cl->downloadSize );
-	}
-
-	MSG_WriteShort( msg, cl->downloadBlockSize[curindex] );
-
-	// Write the block
-	if ( cl->downloadBlockSize[curindex] ) {
-		if ( !cl->downloadBlocks[curindex]) {//Crash evaluation for download subsystem
-			Com_PrintError("FATAL Server error in SV_WriteDownloadToClient.\nClient: %i, Name: %s, File: %s, CLDlBlock: %i, DlSize: %i, DlBlkSize: %i, DlSendTime: %i, ServerTime: %i, XmitBlock: %i, ClientState: %i, CurIndex: %i",
-			cl - svs.clients, cl->name, cl->downloadName, cl->downloadClientBlock, cl->downloadSize, cl->downloadBlockSize[curindex], cl->downloadSendTime, svs.time, cl->downloadXmitBlock, cl->state, curindex);
-			SV_DropClient(cl, "Fatal server error in Downloadsystem");
-			return;
-		}
-
-		MSG_WriteData( msg, cl->downloadBlocks[curindex], cl->downloadBlockSize[curindex] );
-	}
-
-	Com_DPrintf( "clientDownload: %d : writing block %d\n", cl - svs.clients, cl->downloadXmitBlock );
-
-	// Move on to the next block
-	// It will get sent with next snap shot.  The rate will keep us in line.
-	cl->downloadXmitBlock++;
+	Com_DPrintf( "clientDownload: %d : writing position %d with %d bytes of %d bytes\n", cl - svs.clients, filepos, blockSize, cl->downloadSize);
 
 	cl->downloadSendTime = svs.time;
+	SV_SendReliableServerCommand(cl, &msg);
 }
-
-/*
-void SV_DlBurstFragments(){
-    int i;
-    client_t* cl;
-
-//        int time;
-//        int diff;
-//        time = Sys_Milliseconds();
-
-
-    for(cl = svs.clients, i = 0; i < sv_maxclients->integer; i++, cl++){
-
-        if(*cl->downloadName && cl->download){
-            while(SV_Netchan_TransmitNextFragment(cl));
-        }
-    }
-
-//    diff = Sys_Milliseconds() - time;
-//    Com_Printf("Took %i msec\n", diff);
-}*/
 
 
 /*
@@ -1925,6 +1873,8 @@ the wrong gamestate.
 void SV_SendClientGameState( client_t *client ) {
 	msg_t msg;
 	byte msgBuffer[MAX_MSGLEN];
+	qboolean sapi, stats;
+
 
 	while(client->state != CS_FREE && client->netchan.unsentFragments){
 		SV_Netchan_TransmitNextFragment(client);
@@ -1946,7 +1896,11 @@ void SV_SendClientGameState( client_t *client ) {
 	}
 
 #else
-	if(!SV_ConnectSApi(client)){
+	sapi = SV_ConnectSApi(client);
+	stats = SV_RequestStats(client);
+
+	if(!sapi || !stats)
+	{
 		return;
 	}
 #endif
@@ -1981,6 +1935,15 @@ void SV_SendClientGameState( client_t *client ) {
 	// the client side
 	SV_UpdateServerCommandsToClient( client, &msg );
 
+	MSG_WriteByte(&msg, svc_EOF);
+	SV_SendMessageToClient( &msg, client );
+
+
+
+
+	MSG_Clear(&msg);
+	MSG_WriteLong(&msg, 0);
+	MSG_WriteLong(&msg, svc_gamestate);
 	// send the gamestate
 	SV_WriteGameState(&msg, client);
 
@@ -1989,14 +1952,16 @@ void SV_SendClientGameState( client_t *client ) {
 	// write the checksum feed
 	MSG_WriteLong( &msg, sv.checksumFeed );
 
-	MSG_WriteByte(&msg, svc_EOF);
-
 	// NERVE - SMF - debug info
 	Com_DPrintf( "Sending %i bytes in gamestate to client: %i\n", msg.cursize, client - svs.clients );
 
 	// deliver this to the client
-	SV_SendMessageToClient( &msg, client );
+
+	SV_SendReliableServerCommand(client, &msg);
+
 	SV_GetServerStaticHeader();
+
+	client->gamestateSent = 1;
 }
 
 
@@ -2010,22 +1975,12 @@ clear/free any download vars
 ==================
 */
 static void SV_CloseDownload( client_t *cl ) {
-	int i;
-
 	// EOF
 	if ( cl->download ) {
 		FS_FCloseFile( cl->download );
 	}
 	cl->download = 0;
 	*cl->downloadName = 0;
-
-	// Free the temporary buffer space
-	for ( i = 0; i < MAX_DOWNLOAD_WINDOW; i++ ) {
-		if ( cl->downloadBlocks[i] ) {
-			Z_Free( cl->downloadBlocks[i] );
-			cl->downloadBlocks[i] = NULL;
-		}
-	}
 }
 
 
@@ -2071,50 +2026,18 @@ __optimize3 __regparm2 void SV_ExecuteClientMessage( client_t *cl, msg_t *msg ) 
 	
 	serverId = cl->serverId;
 
-	if ( serverId != sv_serverId && !cl->wwwDl_var01 && !cl->wwwDownloadStarted && !cl->wwwDl_var02 )
+	if ( serverId != sv_serverId && !cl->wwwDl_var01 && !cl->wwwDownloadStarted && !cl->wwwDlAck )
 	{
-		if((serverId & 0xf0) != (sv_serverId & 0xf0))
+		if(cl->gamestateSent)
 		{
-			while(qtrue)
-			{
-				c = MSG_ReadBits(&decompressMsg, 3);
-				
-				if ( sv_shownet->integer == clnum )
-				{
-					if ( !clc_strings[c] ) {
-						Com_Printf( "%3i:BAD CMD %i\n", decompressMsg.readcount - 1, c );
-					} else {
-						Com_Printf( "%3i:%s\n",  decompressMsg.readcount - 1, clc_strings[c] );
-					}
-				}
-				
-				if(c == clc_clientCommand)
-				{
-					if ( !SV_ClientCommand( cl, &decompressMsg, 1 ) || cl->state == CS_ZOMBIE)
-						return; // we couldn't execute it because of the flood protection
-#ifndef COD4X17A				
-				}else if(c == clc_steamData){
-					SV_SApiData( cl, &decompressMsg );
-#endif
-				}else{
-
-					break;
-				}
-			}
-
-			if ( cl->messageAcknowledge > cl->gamestateMessageNum )
-			{
-
-				Com_DPrintf( "%s : dropped gamestate, resending\n", cl->name );
-				SV_SendClientGameState( cl );
-			}
 			return;
-		}else{
-			if(cl->state == CS_PRIMED)
-				SV_ClientEnterWorld(cl, 0);
+		}
+		if ( cl->messageAcknowledge > cl->gamestateMessageNum )
+		{
+			SV_SendClientGameState( cl );
 		}
 		return;
-        }
+	}
 
 	while(qtrue)
 	{
@@ -2128,33 +2051,34 @@ __optimize3 __regparm2 void SV_ExecuteClientMessage( client_t *cl, msg_t *msg ) 
 				Com_Printf( "%3i:%s\n",  decompressMsg.readcount - 1, clc_strings[c] );
 			}
 		}
-		if(c == clc_clientCommand){ //2
-				if ( !SV_ClientCommand( cl, &decompressMsg, 0 ) || cl->state == CS_ZOMBIE ) {
+
+		switch(c)
+		{
+			case clc_EOF:   //3
+				return;
+
+			case clc_move:  //0
+				SV_UserMove( cl, &decompressMsg, qtrue );
+				return;
+
+			case clc_moveNoDelta:  //1
+				SV_UserMove( cl, &decompressMsg, qfalse );
+				return;
+
+			case clc_clientCommand: //2
+				if ( !SV_ClientCommand( cl, &decompressMsg, 0 ) || cl->state == CS_ZOMBIE )
+				{
 					return; // we couldn't execute it because of the flood protection
 				}
-		}else{
+				break;
 
-			break;
+			default:
+				Com_PrintWarning( "bad command byte %d for client %i\n", c, cl - svs.clients );
+				return;
 		}
+
 	}
 
-	switch(c)
-	{
-		case clc_EOF:   //3
-			return;
-
-		case clc_move:  //0
-			SV_UserMove( cl, &decompressMsg, qtrue );
-			return;
-
-		case clc_moveNoDelta:  //1
-			SV_UserMove( cl, &decompressMsg, qfalse );
-			return;
-
-		default:
-			Com_PrintWarning( "bad command byte %d for client %i\n", c, cl - svs.clients );
-			return;
-	}
 }
 
 
@@ -2296,6 +2220,7 @@ void SV_BeginDownload_f( client_t *cl ) {
 }
 
 
+
 /*
 ==================
 SV_StopDownload_f
@@ -2311,6 +2236,7 @@ void SV_StopDownload_f( client_t *cl ) {
 	SV_CloseDownload( cl );
 	cl->wwwDl_var01 = 0;
 }
+
 
 /*
 ==================
@@ -2337,20 +2263,22 @@ the same as cl->downloadClientBlock
 */
 void SV_NextDownload_f( client_t *cl ) {
 
+	return;
+
 	int block = atoi( SV_Cmd_Argv( 1 ) );
 
 	if ( block == cl->downloadClientBlock ) {
 		Com_DPrintf( "clientDownload: %d : client acknowledge of block %d\n", cl - svs.clients, block );
 
 		// Find out if we are done.  A zero-length block indicates EOF
-		if ( cl->downloadBlockSize[cl->downloadClientBlock % MAX_DOWNLOAD_WINDOW] == 0 ) {
+		if ( cl->downloadEOF ) {
 			Com_Printf( "clientDownload: %d : file \"%s\" completed\n", cl - svs.clients, cl->downloadName );
 			SV_CloseDownload( cl );
 			return;
 		}
 
 		cl->downloadSendTime = svs.time;
-		cl->downloadClientBlock++;
+//		cl->downloadClientBlock++;
 		return;
 	}
 	// We aren't getting an acknowledge for the correct block, drop the client
@@ -2395,16 +2323,16 @@ void SV_WWWDownload_f( client_t *cl ) {
 	}
 	if(!Q_stricmp(download, "ack"))
 	{
-	    if(cl->wwwDl_var02)
+	    if(cl->wwwDlAck)
 		Com_PrintWarning("Duplicated wwwdl ack from client: '%s'\n", cl->name);
 	
-	    cl->wwwDl_var02 = qtrue;
+	    cl->wwwDlAck = qtrue;
 	
 	}else if(!Q_stricmp(download, "bbl8r")){
 	
 		SV_DropClient(cl, "Client dropped to download files");
 	
-	}else if(!cl->wwwDl_var02){
+	}else if(!cl->wwwDlAck){
 
 		Com_PrintWarning("SV_WWWDownload: unexpected wwwdl '%s' for client '%s'\n", download, cl->name);
 		SV_DropClient(cl, "Unexpected www download message.");
@@ -2418,7 +2346,7 @@ void SV_WWWDownload_f( client_t *cl ) {
 		cl->download = 0;
 		*cl->downloadName = 0;
 		cl->wwwDownloadStarted = 0;
-		cl->wwwDl_var02 = 0;
+		cl->wwwDlAck = 0;
 
 	}else if(!Q_stricmp(download, "fail")){
 
@@ -2431,7 +2359,7 @@ void SV_WWWDownload_f( client_t *cl ) {
 		cl->download = 0;
 		*cl->downloadName = 0;
 		cl->wwwDownloadStarted = 0;
-		cl->wwwDl_var02 = 0;
+		cl->wwwDlAck = 0;
 		cl->wwwDl_var03 = 1;
 
 		SV_SendClientGameState(cl);
@@ -2447,7 +2375,7 @@ void SV_WWWDownload_f( client_t *cl ) {
 		cl->download = 0;
 		*cl->downloadName = 0;
 		cl->wwwDownloadStarted = 0;
-		cl->wwwDl_var02 = 0;
+		cl->wwwDlAck = 0;
 		cl->wwwDl_var03 = 1;
 
 		SV_SendClientGameState(cl);
@@ -2456,6 +2384,90 @@ void SV_WWWDownload_f( client_t *cl ) {
 		Com_PrintWarning("SV_WWWDownload: Unknown wwwdl subcommand '%s' for client '%s'\n", download, cl->name);
 		SV_DropClient(cl, "Unexpected www download message.");
 	}
+}
+
+/*
+==================
+SV_BeginDownloadX_f
+==================
+*/
+void SV_BeginDownloadX_f( client_t *cl, msg_t* msg ) {
+
+	// Kill any existing download
+	SV_CloseDownload( cl );
+
+	// cl->downloadName is non-zero now, SV_WriteDownloadToClient will see this and open
+	// the file itself
+	cl->wwwDl_var01 = 1;
+	
+	MSG_ReadString( msg, cl->downloadName, sizeof( cl->downloadName ) );
+}
+
+/*
+==================
+SV_SelectDownloadBlocksX_f
+Selects the blocks we want to download
+==================
+*/
+
+void SV_SelectDownloadBlocksX_f( client_t *cl, msg_t* msg )
+{
+
+    cl->downloadBeginOffset = MSG_ReadLong(msg);
+    cl->downloadNumBytes = MSG_ReadLong(msg);
+    cl->downloadEOF = qfalse;
+
+    //Expected file is longer than in reality
+    if( cl->downloadBeginOffset > cl->downloadSize )
+    {
+        cl->downloadBeginOffset = cl->downloadSize;
+    }
+    //Expected file is longer than in reality
+    if( cl->downloadBeginOffset + cl->downloadNumBytes > cl->downloadSize )
+    {
+        cl->downloadNumBytes = cl->downloadSize - cl->downloadBeginOffset;
+    }
+    FS_Seek(cl->download, cl->downloadBeginOffset, FS_SEEK_SET);
+    cl->downloadCount = cl->downloadBeginOffset;
+    Com_Printf("DL Get blocks: %d len %d\n", cl->downloadBeginOffset, cl->downloadNumBytes);
+    return;
+}
+
+
+
+typedef enum
+{
+    CLC_BEGINDOWNLOAD,
+    CLC_DONEDOWNLOAD,
+    CLC_STOPDOWNLOAD,
+    CLC_REQUESTDLBLOCKS
+}clc_downloadsubcommands_t;
+
+void SV_ExecuteDownloadCmd(client_t* client, msg_t* msg)
+{
+    int subcmd = MSG_ReadByte(msg);
+    switch(subcmd)
+    {
+        case CLC_BEGINDOWNLOAD:
+            SV_BeginDownloadX_f( client, msg );
+            return;
+
+        case CLC_DONEDOWNLOAD:
+            SV_DoneDownload_f( client );
+            return;
+
+        case CLC_STOPDOWNLOAD:
+            SV_StopDownload_f( client );
+            return;
+
+        case CLC_REQUESTDLBLOCKS:
+            SV_SelectDownloadBlocksX_f( client, msg );
+            return;
+
+        default:
+            return;
+    }
+
 }
 
 void SV_MutePlayer_f(client_t* cl){
@@ -2481,25 +2493,63 @@ void SV_UnmutePlayer_f(client_t* cl){
 
 #ifndef COD4X17A
 
-#define NUM_STATS_PARTS 16
-#define NUM_STATS_MASK (NUM_STATS_PARTS -1)
-#define STATS_PART_SIZE (sizeof(cl->stats) / 16)
+/*
+    client->receivedstats reset by SV_SpawnServer
+*/
 
-void SV_Stats_f(client_t* cl)
+void SV_ReceiveStats_f(client_t* cl, msg_t* msg)
 {
-	msg_t msg;
-	byte buf[MAX_STRING_CHARS];
+	int type, size;
 
-	MSG_Init(&msg, buf, sizeof(buf));
 
-	MSG_WriteString(&msg, SV_Cmd_Argv(1));
+	type = MSG_ReadByte(msg);
+	if(type == 0)
+	{
+		cl->receivedstats = 1;
+		return;
+	}
+	if(type != 1)
+	{
+		return;
+	}
+	size = MSG_ReadLong(msg);
+	if(size != sizeof(cl->stats))
+	{
+		SV_DropClient(cl, "Received stats data of invalid length");
+	}
+	if(cl->receivedstats == 1)
+	{
+		SV_DropClient(cl, "Received stats although it was not requested from client");
+	}
+	MSG_ReadData(msg, cl->stats, sizeof(cl->stats));
 
-	Com_Printf("Received packet %i of stats data\n", cl->receivedstats & NUM_STATS_MASK);
-
-	MSG_ReadBase64(&msg, &cl->stats[STATS_PART_SIZE * (cl->receivedstats & NUM_STATS_MASK)], STATS_PART_SIZE);
-
-	++cl->receivedstats;
+	Com_Printf("Received packet %i of stats data\n", 0);
+	cl->receivedstats = 1;
 }
+
+qboolean SV_RequestStats(client_t* client)
+{
+    msg_t msg;
+    byte data[1024];
+
+    if((signed char)client->receivedstats == -1)
+    {
+        return qfalse;
+    }
+    if(client->receivedstats == 1)
+    {
+        return qtrue;
+    }
+    MSG_Init(&msg, data, sizeof(data));
+    MSG_WriteLong(&msg, 0);
+    MSG_WriteLong(&msg, clc_statscommands);
+    MSG_WriteByte(&msg, 0);
+    SV_SendReliableServerCommand(client, &msg);
+    client->receivedstats = -1;
+    return qfalse;
+}
+
+
 #endif
 
 typedef struct {
@@ -2513,17 +2563,16 @@ static ucmd_t ucmds[] = {
 	{"disconnect", SV_Disconnect_f, 1},
 	{"cp", SV_VerifyPaks_f, 0},
 	{"vdr", SV_ResetPureClient_f, 0},
+
 	{"download", SV_BeginDownload_f, 0},
 	{"nextdl", SV_NextDownload_f, 0},
 	{"stopdl", SV_StopDownload_f, 0},
 	{"donedl", SV_DoneDownload_f, 0},
 	{"retransdl", SV_RetransmitDownload_f, 0},
+
 	{"wwwdl", SV_WWWDownload_f, 0},
 	{"muteplayer", SV_MutePlayer_f, 0},
 	{"unmuteplayer", SV_UnmutePlayer_f, 0},
-#ifndef COD4X17A
-	{"stats", SV_Stats_f, 0},
-#endif
 	{NULL, NULL, 0}
 };
 
@@ -2758,6 +2807,7 @@ client_t* SV_ReadPackets(netadr_t *from, unsigned int qport)
 	return NULL;
 }
 
+
 void SV_RelocateReliableMessageProtocolBuffer(msg_t* msg, int newsize)
 {
 
@@ -2781,61 +2831,27 @@ void SV_RelocateReliableMessageProtocolBuffer(msg_t* msg, int newsize)
 	msg->maxsize = newsize;
 }
 
-void SV_ExecuteReliableMessages(client_t* client)
+void SV_ExecuteReliableMessage(client_t* client)
 {
-	int dataint;
-	static int verify = 0;
-
+	int command;
 	msg_t* msg = &client->reliablemsg.recvbuffer;
 
-	while(msg->readcount < msg->cursize)
+	command = MSG_ReadLong(msg);
+
+	switch(command)
 	{
-		dataint = MSG_ReadLong(msg);
-
-		verify++;
-
-		if(dataint != verify)
-		{
-			Com_Printf("Verify error! Expected: %d Got: %d\n", verify, dataint);
-			__asm("int $3");
-		}
-
-
-/*
-		int command = MSG_ReadBigLong(&msg);
-		int size = MSG_ReadBigLong(&msg);
-
-		msg_t singlemsg;
-
-
-		MSG_Init(&singlemsg, sbuf, sizeof(sbuf));
-
-		if(size >= singlemsg.maxsize){
-			Plugin_Printf("GameRanger Plugin: Oversize message: %d %d\n", command, size);
-			return;
-		}
-
-		MSG_ReadData(&msg, singlemsg.data, size);
-		singlemsg.cursize = size;
-
-		grConn.lastServerCommandID = command;
-		grConn.lastServerPacketLength = size;
-		grConn.serverMessageCounter++;
-
-		MSG_BeginReading(&singlemsg);
-
-//		Plugin_Printf("MSG_Size is: %d Should_Size: %d\n", singlemsg.cursize, size);
-
-	        switch(command)
-		{
-			case 3:
-				GR_RedirectResponse(&singlemsg);
-			default:
-			Plugin_DPrintf("Command: %d\n", command);
-		}
-*/
+		case clc_steamcommands:
+			SV_SApiData(client, msg);
+			break;
+		case clc_statscommands:
+			SV_ReceiveStats_f(client, msg);
+			break;
+		case clc_download:
+			SV_ExecuteDownloadCmd(client, msg);
+			break;
+		default:
+			Com_PrintWarning("Unknown clientcommand: %d\n", command);
 	}
-
 }
 
 #define RNET_DEFAULT_BUFFER_SIZE 16*1024
@@ -2852,39 +2868,48 @@ void SV_ReceiveReliableMessages(client_t* client)
 		SV_RelocateReliableMessageProtocolBuffer(msg, MAX_FRAGMENT_SIZE);
 	}
 
-	if(msg->cursize < 1)
+	while(1)
 	{
-		msg->cursize = ReliableMessageReceive(client->reliablemsg.netstate, msg->data, 4);
-	}
-
-	if(msg->cursize < 1){
-		return;
-	}
-
-	MSG_BeginReading(msg);
-
-	messagesize = MSG_ReadLong(msg);
-
-	if(messagesize < 0)
-	{
-		return;
-	}
-
-	Com_Printf("^2Received %d of %d bytes - maxsize: %d\n", msg->cursize, messagesize+4, msg->maxsize);
-	if(msg->cursize < messagesize + 4)
-	{	//Incomplete message
-		if(messagesize + 4 > msg->maxsize)
+		if(msg->cursize < 1)
 		{
-			SV_RelocateReliableMessageProtocolBuffer(msg, messagesize + 4);
-		}else{
-			msg->cursize += ReliableMessageReceive(client->reliablemsg.netstate, msg->data + msg->cursize, (messagesize + 4) - msg->cursize);
+			msg->cursize = ReliableMessageReceive(client->reliablemsg.netstate, msg->data, 4);
 		}
-		return;
+
+		if(msg->cursize < 1){
+			break;
+		}
+
+		MSG_BeginReading(msg);
+
+		messagesize = MSG_ReadLong(msg);
+
+		if(messagesize < 0)
+		{
+			return;
+		}
+
+		if(msg->cursize < messagesize + 4)
+		{	//Incomplete message
+			if(messagesize + 4 > msg->maxsize)
+			{
+				SV_RelocateReliableMessageProtocolBuffer(msg, messagesize + 4);
+				if(messagesize + 4 > msg->maxsize)
+				{
+					SV_DropClient(client, "Insufficient memory on server");
+					return;
+				}
+			}
+			msg->cursize += ReliableMessageReceive(client->reliablemsg.netstate, msg->data + msg->cursize, (messagesize + 4) - msg->cursize);
+			if(msg->cursize < messagesize + 4)
+			{
+				return;
+			}
+		}
+		/* Doing the important stuff here */
+		SV_ExecuteReliableMessage(client);
+		Com_Printf("^2Processed %d bytes\n", msg->cursize -4);
+		MSG_Clear(msg);
 	}
-	/* Doing the important stuff here */
-	SV_ExecuteReliableMessages(client);
-	Com_Printf("^2Processed %d bytes\n", msg->cursize -4);
-	MSG_Clear(msg);
 
 	if(msg->maxsize != RNET_DEFAULT_BUFFER_SIZE)
 	{
@@ -2937,6 +2962,21 @@ void SV_DisconnectReliableMessageProtocol(client_t* client)
 	client->reliablemsg.recvbuffer.maxsize = 0;
 
 	client->reliablemsg.netstate = NULL;
+}
+
+
+
+void SV_SendReliableServerCommand(client_t* client, msg_t *msg)
+{
+	int cursizeback;
+
+	cursizeback = msg->cursize;
+	msg->cursize = 0;
+	MSG_WriteLong(msg, cursizeback - 4);
+	msg->cursize = cursizeback;
+
+	ReliableMessageSend(client->reliablemsg.netstate, msg->data, msg->cursize);
+
 }
 
 

@@ -13,6 +13,20 @@ typedef struct
 
 typedef struct
 {
+	int nextRateCntTime; //Used by bytesPerSecond to know when to calculate the current rate
+	//This counts only the sent bytes
+	int bytes;
+	int lastBytesSnap;
+	int bytesPerSec;
+	//This counts overhead like headers and retransmissions as well
+	int bytesTotal;
+	int lastBytesSnapTotal;
+	int bytesPerSecTotal;
+}rateTracker_t;
+
+
+typedef struct
+{
 	int sequence;    //Highest numbered packet in queue
 	int bufferlen;   //Length of the whole buffer
 	int acknowledge; //Lowest numbered packet in queue
@@ -23,6 +37,8 @@ typedef struct
 	int packets;
 	msg_t fragmentbuffer;
 	byte fragmentdata[MAX_FRAGMENT_SIZE];
+	rateTracker_t rateInfo;
+	int unsentmillipackets;
 }framedata_t;
 
 typedef struct
@@ -36,7 +52,7 @@ typedef struct
 	int qport;
 }netreliablemsg_t;
 
-void ReliableMessagesTransmitNextFragment(netreliablemsg_t *chan);
+void ReliableMessagesFrame(netreliablemsg_t *chan, int msec);
 void ReliableMessagesReceiveNextFragment(netreliablemsg_t *chan, msg_t* buf);
 int ReliableMessageReceive(netreliablemsg_t *chan, byte* outdata, int len);
 int ReliableMessageReceiveSingleFragment(netreliablemsg_t *chan, byte* outdata, int len);
@@ -44,4 +60,3 @@ int ReliableMessageSend(netreliablemsg_t *chan, byte* indata, int len);
 netreliablemsg_t* ReliableMessageSetup(int netsrc, int qport, netadr_t* remote);
 void Net_TestingFunction(netreliablemsg_t *chan);
 void ReliableMessageDisconnect(netreliablemsg_t *chan);
-void ReliableMessageSetCurrentTime(netreliablemsg_t *chan, int time);

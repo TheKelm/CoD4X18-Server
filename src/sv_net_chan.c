@@ -26,68 +26,8 @@
 #include "server.h"
 
 #include <string.h>
-/*
-fileHandle_t commanddump;
 
 
-void SV_DumpCommands( client_t *client, byte *cmd, int size, qboolean cl_to_servercmd) {
-
-	if(!com_developer || com_developer->integer < 2)
-		return;
-
-	msg_t msg;
-	byte buffer[20400];
-
-	MSG_Init(&msg, buffer, sizeof(buffer));
-
-	if(cl_to_servercmd){
-		Com_sprintf((char*)buffer, sizeof(buffer), "\nDir: Cl -> Sv, Cl: %i, T: %i, NA: %i, Len %i, Msg: ", 
-			client - svs.clients, svs.time ,client->reliableSequence - client->reliableAcknowledge, size);
-        }else{
-		Com_sprintf((char*)buffer, sizeof(buffer), "\nDir: Sv -> Cl, Cl: %i, T: %i, NA: %i, Len %i, Msg: ", 
-			client - svs.clients, svs.time ,client->reliableSequence - client->reliableAcknowledge, size);
-        }
-
-	int lenbeginstr = strlen((char*)buffer);
-
-	MSG_ReadBitsCompress(cmd, &buffer[lenbeginstr], size);
-
-        buffer[size+lenbeginstr-1] = '\n';
-
-	Sys_EnterCriticalSection(5);
-
-	if ( com_logfile && com_logfile->integer ) {
-    // TTimo: only open the qconsole.log if the filesystem is in an initialized state
-    //   also, avoid recursing in the qconsole.log opening (i.e. if fs_debug is on)
-	    if ( !commanddump && FS_Initialized()) {
-			struct tm *newtime;
-			time_t aclock;
-
-			time( &aclock );
-			newtime = localtime( &aclock );
-
-			commanddump = FS_FOpenFileWrite( "reliableupdateCmds.log" );
-
-			if ( com_logfile->integer > 1 && commanddump) {
-				// force it to not buffer so we get valid
-				// data even if we are crashing
-				FS_ForceFlush(commanddump);
-			}
-			if ( commanddump ) FS_Write(va("\nLogfile opened on %s\n", asctime( newtime )), strlen(va("\nLogfile opened on %s\n", asctime( newtime ))), commanddump);
-	    }
-	    if (commanddump && FS_Initialized()) {
-
-		FS_Write("\nUncompressed: ", 15, commanddump);
-		FS_Write(buffer, 300, commanddump);
-		FS_Write("\nCompressed: ", 13, commanddump);
-		FS_Write(cmd, size, commanddump);
-	    }
-	}
-	Sys_LeaveCriticalSection(5);
-}
-
-
-*/
 /*
 ==============
 SV_Netchan_Decode

@@ -405,7 +405,7 @@ Called by SV_SendClientSnapshot and SV_SendClientGameState
 __cdecl void SV_SendMessageToClient( msg_t *msg, client_t *client ) {
 	int rateMsec;
 
-#ifdef COD4X17A
+#ifdef SV_SEND_HUFFMAN
 	int len;
 	*(int32_t*)0x13f39080 = *(int32_t*)msg->data;
 	len = MSG_WriteBitsCompress( 0, msg->data + 4 ,(byte*)0x13f39084 , msg->cursize - 4);
@@ -418,7 +418,7 @@ __cdecl void SV_SendMessageToClient( msg_t *msg, client_t *client ) {
 
 	if(client->demorecording && !client->demowaiting)
 	{
-#ifdef COD4X17A
+#ifdef SV_SEND_HUFFMAN
 		SV_WriteDemoMessageForClient((byte*)0x13f39080, len, client);
 #else
 		SV_WriteDemoMessageForClient(msg->data, msg->cursize, client);
@@ -426,7 +426,7 @@ __cdecl void SV_SendMessageToClient( msg_t *msg, client_t *client ) {
 	}
 
 	// record information about the message
-#ifdef COD4X17A
+#ifdef SV_SEND_HUFFMAN
 	client->frames[client->netchan.outgoingSequence & PACKET_MASK].messageSize = len;
 #else
 	client->frames[client->netchan.outgoingSequence & PACKET_MASK].messageSize = msg->cursize;
@@ -435,7 +435,7 @@ __cdecl void SV_SendMessageToClient( msg_t *msg, client_t *client ) {
 	client->frames[client->netchan.outgoingSequence & PACKET_MASK].messageAcked = 0xFFFFFFFF;
 
 	// send the datagram
-#ifdef COD4X17A
+#ifdef SV_SEND_HUFFMAN
 	SV_Netchan_Transmit( client, (byte*)0x13f39080, len );
 #else
 	SV_Netchan_Transmit( client, msg->data, msg->cursize );
@@ -529,7 +529,7 @@ void SV_EndClientSnapshot(client_t *client, msg_t *msg)
 {
 
 	if ( client->state != CS_ZOMBIE )
-		SV_WriteDownloadToClient(client, msg);
+		SV_WriteDownloadToClient( client );
 		
 	MSG_WriteByte(msg, svc_EOF);
 		
@@ -556,7 +556,7 @@ void SV_EndClientSnapshot(client_t *client, msg_t *msg)
 			SV_DropClient(client, "EXE_SERVERMESSAGEOVERFLOW");
 		}
 	}
-		
+	
 	SV_SendMessageToClient(msg, client);
 }
 
@@ -587,11 +587,10 @@ void SV_SendClientMessages( void ) {
 			snapClients[i] = 0;		
 			continue; // not connected
 		}
-#ifndef COD4X17A		
-		ReliableMessageSetCurrentTime(c->reliablemsg.netstate, svs.time);
-		ReliableMessagesTransmitNextFragment(c->reliablemsg.netstate);
+
+		ReliableMessagesFrame(c->reliablemsg.netstate, svs.time);
+
 		SV_ReceiveReliableMessages(c);
-#endif
 		if ( svs.time < c->nextSnapshotTime ) {
 			snapClients[i] = 0;	
 			continue; // not time yet

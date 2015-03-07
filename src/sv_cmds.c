@@ -1993,16 +1993,6 @@ void SV_ChangeGametype_f()
 }
 
 
-void SV_SendTestData_f()
-{
-	client_t* cl = NULL;
-	Com_Printf("Addr: %x\n", &cl->name);
-
-	int numbytes = atoi(Cmd_Argv(1));
-
-	ReliableMessageAddTestData(svs.clients[0].reliablemsg.netstate, numbytes);
-}
-
 void SV_AddOperatorCommands(){
 	
 	static qboolean	initialized;
@@ -2012,7 +2002,6 @@ void SV_AddOperatorCommands(){
 	}
 	initialized = qtrue;
 
-	Cmd_AddCommand ("sendtestdata", SV_SendTestData_f);
 	Cmd_AddCommand ("killserver", SV_KillServer_f);
 	Cmd_AddCommand ("setPerk", SV_SetPerk_f);
 	Cmd_AddPCommand ("map_restart", SV_MapRestart_f, 50);

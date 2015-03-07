@@ -11,7 +11,45 @@
 #include <string.h>
 #include <stdlib.h>
 
+//#define RELIABLE_DEBUG
+//#define RELIABLE_RATEDBG
 
+void ReliableMessageTrackRate(netreliablemsg_t *chan)
+{
+	if(chan->rxwindow.rateInfo.nextRateCntTime == 0)
+	{
+		chan->rxwindow.rateInfo.nextRateCntTime = chan->time + 1000;
+		chan->txwindow.rateInfo.nextRateCntTime = chan->time + 1000;
+		chan->rxwindow.rateInfo.lastBytesSnap = chan->rxwindow.rateInfo.bytes;
+		chan->txwindow.rateInfo.lastBytesSnap = chan->txwindow.rateInfo.bytes;
+		chan->rxwindow.rateInfo.lastBytesSnapTotal = chan->rxwindow.rateInfo.bytesTotal;
+		chan->txwindow.rateInfo.lastBytesSnapTotal = chan->txwindow.rateInfo.bytesTotal;
+		return;
+	}
+
+	if(chan->time > chan->rxwindow.rateInfo.nextRateCntTime)
+	{
+		chan->rxwindow.rateInfo.bytesPerSec = chan->rxwindow.rateInfo.bytes - chan->rxwindow.rateInfo.lastBytesSnap;
+		chan->rxwindow.rateInfo.lastBytesSnap = chan->rxwindow.rateInfo.bytes;
+		chan->rxwindow.rateInfo.bytesPerSecTotal = chan->rxwindow.rateInfo.bytesTotal - chan->rxwindow.rateInfo.lastBytesSnapTotal;
+		chan->rxwindow.rateInfo.lastBytesSnapTotal = chan->rxwindow.rateInfo.bytesTotal;
+		chan->rxwindow.rateInfo.nextRateCntTime = chan->time + 1000;
+	}
+	if(chan->time > chan->txwindow.rateInfo.nextRateCntTime)
+	{
+		chan->txwindow.rateInfo.bytesPerSec = chan->txwindow.rateInfo.bytes - chan->txwindow.rateInfo.lastBytesSnap;
+		chan->txwindow.rateInfo.lastBytesSnap = chan->txwindow.rateInfo.bytes;
+		chan->txwindow.rateInfo.bytesPerSecTotal = chan->txwindow.rateInfo.bytesTotal - chan->txwindow.rateInfo.lastBytesSnapTotal;
+		chan->txwindow.rateInfo.lastBytesSnapTotal = chan->txwindow.rateInfo.bytesTotal;
+		chan->txwindow.rateInfo.nextRateCntTime = chan->time + 1000;
+#ifdef RELIABLE_RATEDBG
+	Com_Printf("TX-Rate %d, TX-RateTotal: %d RX-Rate %d, RX-RateTotal: %d\n", 
+			chan->txwindow.rateInfo.bytesPerSec, chan->txwindow.rateInfo.bytesPerSecTotal,
+			chan->rxwindow.rateInfo.bytesPerSec, chan->rxwindow.rateInfo.bytesPerSecTotal);
+#endif
+	}
+
+}
 
 int ReliableMessageGetUsedSendBufferSize(netreliablemsg_t *chan)
 {	
@@ -89,7 +127,9 @@ int ReliableMessageChangeSendBufferSize(netreliablemsg_t *chan, int newfragmentc
 	chan->txwindow.fragments = newfrags;	
 	
 	chan->txwindow.bufferlen = newfragmentcount;
+#ifdef RELIABLE_DEBUG
 	Com_Printf("^2New Fragmentcount: %d\n", chan->txwindow.bufferlen);
+#endif
 	return chan->txwindow.bufferlen;
 }
 
@@ -162,10 +202,6 @@ void ReliableMessagesTransmitNextFragment(netreliablemsg_t *chan)
 	msg_t buf;
 	byte data[MAX_PACKETLEN];
 
-	if(chan == NULL)
-	{
-		return;
-	}
 	
 	MSG_Init(&buf, data, sizeof(data));
 
@@ -185,6 +221,7 @@ void ReliableMessagesTransmitNextFragment(netreliablemsg_t *chan)
 			NET_SendPacket( chan->sock, buf.cursize, buf.data, &chan->remoteAddress );	
 			chan->txwindow.packets++;
 			chan->nextacktime = chan->time + 350;
+			chan->txwindow.rateInfo.bytesTotal += buf.cursize; //Track the rate
 		}
 		return;
 	}
@@ -200,7 +237,9 @@ void ReliableMessagesTransmitNextFragment(netreliablemsg_t *chan)
 	    if(chan->txwindow.fragments[sequence % chan->txwindow.bufferlen].ack == sequence)
 	    {
 		//Already received by the remote end
+#ifdef RELIABLE_DEBUG
 		Com_Printf("Send: Skip over %d\n", sequence);
+#endif
 	    }else{
 		MSG_WriteLong(&buf, 0xfffffff0);
 		MSG_WriteShort(&buf, chan->qport);
@@ -215,7 +254,10 @@ void ReliableMessagesTransmitNextFragment(netreliablemsg_t *chan)
 		NET_SendPacket( chan->sock, buf.cursize, buf.data, &chan->remoteAddress );
 		chan->txwindow.packets++;
 		chan->nextacktime = chan->time + 350;
+#ifdef RELIABLE_DEBUG
 		Com_Printf("Sending SEQ: %d ACK: %d\n", sequence, chan->rxwindow.sequence);
+#endif
+		chan->txwindow.rateInfo.bytesTotal += buf.cursize; //Track the rate
 	    }
 	}
 
@@ -244,7 +286,7 @@ void ReliableMessagesReceiveNextFragment(netreliablemsg_t *chan, msg_t* buf)
 	acknowledge = MSG_ReadLong(buf);
 
 	chan->rxwindow.packets++;
-	
+	chan->rxwindow.rateInfo.bytesTotal += buf->cursize; //Track the rate
 	//if fragment out of window size?
 	if(sequence >= chan->rxwindow.sequence + chan->rxwindow.windowsize)
 	{
@@ -279,7 +321,9 @@ void ReliableMessagesReceiveNextFragment(netreliablemsg_t *chan, msg_t* buf)
 			Com_PrintError("Selective acknowledge %d is out of windowsize acknowledge %d\n", startack + length, acknowledge);
 			return;
 		}
+#ifdef RELIABLE_DEBUG
 		Com_Printf("SACK: %d %d\n", startack, length);
+#endif
 		for(j = 0; j < length; ++j)
 		{
 			chan->txwindow.fragments[(startack +j) % chan->txwindow.bufferlen].ack = startack +j;
@@ -288,9 +332,9 @@ void ReliableMessagesReceiveNextFragment(netreliablemsg_t *chan, msg_t* buf)
 
 	windowsize = MSG_ReadShort(buf);
 	fragmentsize = MSG_ReadShort(buf);
-	
+#ifdef RELIABLE_DEBUG
 	Com_Printf("^5Received ACK %d SEQ: %d\n", acknowledge, sequence);
-	
+#endif
 	if(fragmentsize > MAX_FRAGMENT_SIZE){
 		Com_PrintError("Invalid fragmentsize (%d)\n", fragmentsize);
 		return;
@@ -299,7 +343,9 @@ void ReliableMessagesReceiveNextFragment(netreliablemsg_t *chan, msg_t* buf)
 	if(chan->txwindow.acknowledge < acknowledge){
 		//Acknowledge all received data
 		chan->txwindow.acknowledge = acknowledge;
+#ifdef RELIABLE_DEBUG
 		Com_Printf("^5Acknowledge is now %d Top is now: %d Remaining fragments are %d\n", chan->txwindow.acknowledge, chan->txwindow.sequence, chan->txwindow.sequence - chan->txwindow.acknowledge);
+#endif
 		/* Purpos: reducing the dynamic send buffer size when it is used only partially */
 		usedfragmentcnt = chan->txwindow.sequence - chan->txwindow.acknowledge;
 
@@ -321,6 +367,7 @@ void ReliableMessagesReceiveNextFragment(netreliablemsg_t *chan, msg_t* buf)
 	chan->rxwindow.fragments[sequence % chan->rxwindow.bufferlen].len = fragmentsize;
 	MSG_ReadData(buf, chan->rxwindow.fragments[sequence % chan->rxwindow.bufferlen].data, 
 					chan->rxwindow.fragments[sequence % chan->rxwindow.bufferlen].len);
+	chan->rxwindow.rateInfo.bytes += fragmentsize; //Track the rate
 	chan->rxwindow.fragments[sequence % chan->rxwindow.bufferlen].ack = sequence;
 
 
@@ -420,7 +467,7 @@ int ReliableMessageReceiveSingleFragment(netreliablemsg_t *chan, byte* outdata, 
 
 
 int ReliableMessageSend(netreliablemsg_t *chan, byte* indata, int len)
-{	
+{
 	int usedfragmentcnt, freefragmentcnt, newbuflen, newfreefragmentcnt;
 	int sentlen;
 	int i, index, slen;
@@ -438,9 +485,9 @@ int ReliableMessageSend(netreliablemsg_t *chan, byte* indata, int len)
 	}
 	sentlen = 0;
 
-	if(freefragmentcnt < (len / MAX_FRAGMENT_SIZE))
+	if(freefragmentcnt < (len / MAX_FRAGMENT_SIZE) +1)
 	{
-		newbuflen = len / MAX_FRAGMENT_SIZE + usedfragmentcnt;
+		newbuflen = len / MAX_FRAGMENT_SIZE + usedfragmentcnt +1;
 		/* 1.5 * needed size */
 		newbuflen += (newbuflen / 2);
 		newfreefragmentcnt = ReliableMessageChangeSendBufferSize(chan, newbuflen) - usedfragmentcnt;
@@ -464,11 +511,14 @@ int ReliableMessageSend(netreliablemsg_t *chan, byte* indata, int len)
 		index = chan->txwindow.sequence % chan->txwindow.bufferlen;
 		memcpy(chan->txwindow.fragments[index].data, indata + i * MAX_FRAGMENT_SIZE, slen);
 		chan->txwindow.fragments[index].len = slen;
-		
+		chan->txwindow.fragments[index].ack = -1;
+		chan->txwindow.fragments[index].senttime = 0;
+		chan->txwindow.fragments[index].packetnum = 0;
 		len -= slen;
 		sentlen += slen;
 		
 		chan->txwindow.sequence++;
+		chan->txwindow.rateInfo.bytes += slen;  //Track the rate
 	}		
 	return sentlen;
 }
@@ -520,13 +570,13 @@ netreliablemsg_t* ReliableMessageSetup( int qport, int netsrc, netadr_t* remote)
 
 	chan->txwindow.fragments = dyntxmem;
 	chan->rxwindow.fragments = dynrxmem;
-	chan->txwindow.windowsize = 16;
-	chan->rxwindow.windowsize = 16;
+	chan->txwindow.windowsize = 20;
+	chan->rxwindow.windowsize = 20;
 	chan->txwindow.bufferlen = DEFAULT_BUFFER_SIZE;
 	chan->rxwindow.bufferlen = DEFAULT_BUFFER_SIZE;	
-	
-	memset(chan->txwindow.fragments, -1, chan->txwindow.bufferlen * sizeof(fragment_t));
+
 	memset(chan->rxwindow.fragments, -1, chan->rxwindow.bufferlen * sizeof(fragment_t));
+
 	memcpy(&chan->remoteAddress, remote, sizeof(netadr_t));
 
 	MSG_Init(&chan->rxwindow.fragmentbuffer, chan->rxwindow.fragmentdata, sizeof(chan->rxwindow.fragmentdata));
@@ -556,11 +606,12 @@ void ReliableMessageDisconnect(netreliablemsg_t *chan)
 
 void ReliableMessageSetCurrentTime(netreliablemsg_t *chan, int ftime)
 {
-	if(chan == NULL)
-	{
-		return;
-	}
 	chan->time = ftime;
+}
+
+int ReliableMessageGetCurrentTime(netreliablemsg_t *chan)
+{
+	return chan->time;
 }
 
 /* Functions to test the operation. No real use. */
@@ -624,3 +675,40 @@ void ReliableMessageGetTestData(netreliablemsg_t *chan)
 	}
 	
 }
+
+void ReliableMessagesFrame(netreliablemsg_t *chan, int now)
+{
+	int lastTime;
+	int elapsed;
+	int millipackets;
+	int i, packets;
+
+	if(chan == NULL)
+	{
+		return;
+	}
+        lastTime = ReliableMessageGetCurrentTime(chan);
+        //Get the time elapsed between last calling of this function and now
+        elapsed = now - lastTime;
+        ReliableMessageSetCurrentTime(chan, now);
+#ifdef RELIABLE_DEBUG
+        if(elapsed > 250)
+        {
+            Com_Printf("Omit sending packets - burst prevention\n");
+            return;
+        }
+#endif
+	//HOW MANY frames we have to send compared to last time?
+	//Condition: windowsize -> sending all packets in 1000msec window
+	//Counting the amount of packets so we can stay with the rate in line
+        millipackets = elapsed * chan->txwindow.windowsize + chan->txwindow.unsentmillipackets;
+        packets = millipackets / 1000;
+        chan->txwindow.unsentmillipackets = millipackets % 1000;
+        //Sending all packets
+        for(i = 0; i < packets; ++i)
+        {
+            ReliableMessagesTransmitNextFragment(chan);
+        }
+        ReliableMessageTrackRate(chan);
+}
+

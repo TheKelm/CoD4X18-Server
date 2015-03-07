@@ -168,11 +168,7 @@ typedef struct client_s {//90b4f8c
 	int			protocol;
 	qboolean		needupdate;
 	qboolean		updateconnOK;
-#ifdef COD4X17A
-	byte			dummy767[44];
-#else
 	reliableprotocol_t	reliablemsg;
-#endif
 	msg_t			incommingrmsg;
 	uint64_t		steamid;
 	uint64_t		steamidPending;
@@ -210,18 +206,21 @@ typedef struct client_s {//90b4f8c
 	fileHandle_t		download;		//(0x212e4) file being downloaded
  	int			downloadSize;		//(0x212e8) total bytes (can't use EOF because of paks)
  	int			downloadCount;		//(0x212ec) bytes sent
-	int			downloadClientBlock;	//(0x212f0) last block we sent to the client, awaiting ack
+	int			downloadClientBlock;	//(0x212f0) Current block we send to client
 	int			downloadCurrentBlock;	//(0x212f4) current block number
 	int			downloadXmitBlock;	//(0x212f8) last block we xmited
-	unsigned char		*downloadBlocks[MAX_DOWNLOAD_WINDOW];	//(0x212fc) the buffers for the download blocks
-	int			downloadBlockSize[MAX_DOWNLOAD_WINDOW];	//(0x2131c)
+	unsigned char		*dfree1[MAX_DOWNLOAD_WINDOW];	//(0x212fc) the buffers for the download blocks
+	int			dfree2[MAX_DOWNLOAD_WINDOW -3];	//(0x2131c)
+	int			downloadBeginOffset;
+	int			downloadNumBytes;
+	int			downloadBlockSize;
 	qboolean		downloadEOF;		//(0x2133c) We have sent the EOF block
 	int			downloadSendTime;	//(0x21340) time we last got an ack from the client
 	char			wwwDownloadURL[MAX_OSPATH]; //(0x21344) URL from where the client should download the current file
 
 	qboolean		wwwDownload;		// (0x21444)
 	qboolean		wwwDownloadStarted;	// (0x21448)
-	qboolean		wwwDl_var02;		// (0x2144c)
+	qboolean		wwwDlAck;		// (0x2144c)
 	qboolean		wwwDl_var03;
 	int			nextReliableTime;	// (0x21454) svs.time when another reliable command will be allowed
 	int			floodprotect;		// (0x21458)
@@ -248,7 +247,7 @@ typedef struct client_s {//90b4f8c
 	byte			hasVoip;//(0xa3638)
 	byte			stats[8192];		//(0xa3639)
 	byte			receivedstats;		//(0xa5639)
-	byte			dummy1;
+	byte			gamestateSent;
 	byte			dummy2;
 } client_t;//0x0a563c
 
@@ -666,7 +665,7 @@ void SV_DropClient( client_t *drop, const char *reason );
 void SV_DelayDropClient(client_t *client, const char *dropmsg);
 __optimize3 __regparm3 void SV_UserMove( client_t *cl, msg_t *msg, qboolean delta );
 void SV_ClientEnterWorld( client_t *client, usercmd_t *cmd );
-void SV_WriteDownloadToClient( client_t *cl, msg_t *msg );
+void SV_WriteDownloadToClient( client_t *cl );
 void SV_SendClientGameState( client_t *client );
 
 void SV_Netchan_Decode( client_t *client, byte *data, int remaining );
@@ -788,6 +787,7 @@ void __cdecl SV_FreeClient(client_t* drop);
 void __cdecl SV_FreeClientScriptId(client_t *cl);
 void __cdecl SV_LinkEntity(gentity_t*);
 void __cdecl SV_UnlinkEntity(gentity_t*);
+void SV_SpawnServerResetPlayers();
 void serverStatus_Write();
 
 int SV_GetPlayerUIDByHandle(const char* handle);
@@ -821,6 +821,8 @@ void SV_SteamData(client_t* cl, msg_t* msg);
 qboolean SV_SetupReliableMessageProtocol(client_t* client);
 void SV_DisconnectReliableMessageProtocol(client_t* client);
 void SV_ReceiveReliableMessages(client_t* client);
+void SV_SendReliableServerCommand(client_t* client, msg_t *msg);
+qboolean SV_RequestStats(client_t* client);
 #ifdef COD4X18UPDATE
 void SV_ConnectWithUpdateProxy(client_t *cl);
 #endif

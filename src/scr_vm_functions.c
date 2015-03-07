@@ -357,7 +357,7 @@ void PlayerCmd_SetGravity(scr_entref_t arg){
     Pmove_ExtendedTurnOn();
 
     svs.clients[entityNum].gravity = gravity;
-
+    SV_SendServerCommand_IW(&svs.clients[entityNum], 1, va("v g_gravity \"%d\"", gravity));
 }
 
 /*
@@ -422,6 +422,8 @@ void PlayerCmd_SetGroundReferenceEnt(scr_entref_t arg)
 	gentity->s.groundEntityNum = otherEntityNum;
 }
 
+
+
 /*
 ============
 PlayerCmd_SetJumpHeight
@@ -469,6 +471,7 @@ void PlayerCmd_SetJumpHeight(scr_entref_t arg){
     Pmove_ExtendedTurnOn();
 
     svs.clients[entityNum].jumpHeight = height;
+    SV_SendServerCommand_IW(&svs.clients[entityNum], 1, va("v jump_height \"%d\"", height));
 }
 
 
