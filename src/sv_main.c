@@ -779,6 +779,14 @@ __optimize3 __regparm1 void SVC_Info( netadr_t *from ) {
 
 	s = SV_Cmd_Argv(1);
 
+
+	// Prevent using getstatus as an amplifier
+	if ( SVC_RateLimitAddress( from, 4, sv_queryIgnoreTime->integer*1000 )) {
+	//	Com_DPrintf( "SVC_Info: rate limit from %s exceeded, dropping request\n", NET_AdrToString( *from ) );
+		return;
+	}
+
+
 	// Allow getstatus to be DoSed relatively easily, but prevent
 	// excess outbound bandwidth usage when being flooded inbound
 	if ( SVC_RateLimit( &querylimit.infoBucket, 100, 100000 ) ) {
@@ -786,13 +794,7 @@ __optimize3 __regparm1 void SVC_Info( netadr_t *from ) {
 		return;
 	}
 
-	// Prevent using getstatus as an amplifier
-	if ( SVC_RateLimitAddress( from, 4, sv_queryIgnoreTime->integer*1000 )) {
-	//	Com_DPrintf( "SVC_Info: rate limit from %s exceeded, dropping request\n", NET_AdrToString( *from ) );
-		return;
-	}
 	infostring[0] = 0;
-
 
 	/*
 	 * Check whether Cmd_Argv(1) has a sane length. This was not done in the original Quake3 version which led

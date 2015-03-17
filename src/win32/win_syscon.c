@@ -155,7 +155,7 @@ static LONG WINAPI ConWndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 		break;
 
 	case WM_CLOSE:
-			Cbuf_AddText("quit");
+			Cbuf_AddText("quit\n");
 
 		return 0;
 	case WM_CTLCOLORSTATIC:
@@ -196,7 +196,7 @@ static LONG WINAPI ConWndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 				PostQuitMessage( 0 );
 			} else
 			{
-				Cbuf_AddText("quit");
+				Cbuf_AddText("quit\n");
 
 			}
 		} else if ( wParam == CLEAR_ID )   {

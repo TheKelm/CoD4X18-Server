@@ -33,6 +33,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define SV_SEND_HUFFMAN
 /*
 =============================================================================
 
