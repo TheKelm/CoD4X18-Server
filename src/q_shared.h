@@ -97,6 +97,10 @@ typedef unsigned short WORD;
 typedef unsigned char byte;
 typedef enum {qfalse, qtrue}	qboolean; 
 
+
+#define DEVRELEASE
+
+
 #ifndef STDCALL
 #define STDCALL __attribute__((stdcall))
 #endif
