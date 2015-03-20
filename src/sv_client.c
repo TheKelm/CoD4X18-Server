@@ -41,9 +41,8 @@
 #include "hl2rcon.h"
 #include "sv_auth.h"
 
-#ifndef COD4X17A
 #include "sapi.h"
-#endif
+
 
 #include <stdint.h>
 #include <stdarg.h>
@@ -77,239 +76,6 @@ as well as IPv6 connections, since there is no way to use the
 v4-only auth server for these new types of connections.
 =================
 */
-#ifdef COD4X17A
-__optimize3 __regparm1 void SV_GetChallenge(netadr_t *from)
-{
-	int		i;
-	int		oldest;
-	int		oldestTime;
-	int		oldestClientTime;
-	int		clientChallenge;
-	challenge_t	*challenge;
-
-	oldest = 0;
-	oldestClientTime = oldestTime = 0x7fffffff;
-
-	// see if we already have a challenge for this ip
-	challenge = &svse.challenges[0];
-	clientChallenge = atoi(SV_Cmd_Argv(1));
-
-	for(i = 0 ; i < MAX_CHALLENGES ; i++, challenge++)
-	{
-		if(NET_CompareAdr(from, &challenge->adr))
-		{
-			if(challenge->connected){
-				Com_Memset(challenge, 0 ,sizeof(challenge_t));
-				continue;
-			}
-
-			if(challenge->time < oldestClientTime)
-				oldestClientTime = challenge->time;
-			break;
-		}
-
-		if(challenge->time < oldestTime)
-		{
-			oldestTime = challenge->time;
-			oldest = i;
-		}
-	}
-
-	if (i == MAX_CHALLENGES)
-	{
-		// this is the first time this client has asked for a challenge
-		challenge = &svse.challenges[oldest];
-		challenge->clientChallenge = clientChallenge;
-		challenge->adr = *from;
-		challenge->firstTime = svs.time;
-		challenge->connected = qfalse;
-		challenge->pbguid[31] = 0;
-		Q_strncpyz(challenge->pbguid, SV_Cmd_Argv(2),33);
-		challenge->ipAuthorize = 0;
-		challenge->challenge = ( (rand() << 16) ^ rand() ) ^ svs.time;
-	}
-
-	challenge->time = svs.time;
-
-
-	// Drop the authorize stuff if this client is coming in via IPv6 as the auth server does not support ipv6.
-	// Drop also for addresses coming in on local LAN and for stand-alone games independent from id's assets.
-	if(challenge->adr.type == NA_IP && svse.authorizeAddress.type != NA_DOWN && !Sys_IsLANAddress(from) && sv_authorizemode->integer != -1)
-	{
-
-		// look up the authorize server's IP
-		if(svse.authorizeAddress.type == NA_BAD)
-		{
-			Com_Printf( "Resolving %s\n", AUTHORIZE_SERVER_NAME );
-			if (NET_StringToAdr(AUTHORIZE_SERVER_NAME, &svse.authorizeAddress, NA_IP))
-			{
-				svse.authorizeAddress.port = BigShort( PORT_AUTHORIZE );
-				Com_Printf( "%s resolved to %s\n", AUTHORIZE_SERVER_NAME, NET_AdrToString(&svse.authorizeAddress));
-			}
-		}
-
-		// we couldn't contact the auth server, let them in.
-		if(svse.authorizeAddress.type == NA_BAD){
-			Com_Printf("Couldn't resolve auth server address\n");
-			svse.authorizeAddress.type = NA_DOWN;
-			return;
-                }
-
-
-		if(svse.authorizeAddress.type == NA_IP && challenge->adr.type == NA_IP && NET_CompareBaseAdr(from, &svse.authorizeAddress)){
-			//Reset the default socket so that this is forwarded to all sockets
-			if(NET_GetDefaultCommunicationSocket() == NULL){
-				NET_RegisterDefaultCommunicationSocket(from);
-				svse.authorizeAddress.sock = from->sock;
-			}
-			from->port = BigShort(PORT_AUTHORIZE);
-			NET_OutOfBandPrint( NS_SERVER, from, "getIpAuthorize %i %s \"\" 0", challenge->challenge, NET_AdrToStringShort(from));
-			return;
-		}
-
-		// if they have been challenging for a long time and we
-		// haven't heard anything from the authorize server, go ahead and
-		// let them in, assuming the id server is down
-		else if(svs.time - challenge->firstTime > AUTHORIZE_TIMEOUT)
-		{
-			if(challenge->ipAuthorize == 0)
-			{
-				Com_PrintWarning( "Activisions authorize server timed out - Accept client without validating him\n" );
-			}
-		}else{
-
-			if(!challenge->pbguid[31]){
-				return;
-			}
-
-			// otherwise send their ip to the authorize server
-			Com_DPrintf( "sending getIpAuthorize for %s\n", NET_AdrToString( from ));
-
-			// the 0 is for backwards compatibility with obsolete sv_allowanonymous flags
-			// getIpAuthorize <challenge> <IP> <game> 0 <auth-flag>
-			NET_OutOfBandPrint( NS_SERVER, from, "needcdkey");
-
-			NET_OutOfBandPrint( NS_SERVER, &svse.authorizeAddress,
-				"getIpAuthorize %i %s \"\" 0 PB \"%s\"",challenge->challenge, NET_AdrToStringShort(from), challenge->pbguid );
-
-			return;
-		}
-	}
-
-	if(!challenge->pbguid[31]){
-		return;
-	}
-
-	challenge->pingTime = com_frameTime;
-
-	NET_OutOfBandPrint(NS_SERVER, &challenge->adr, "challengeResponse %d %d",
-			   challenge->challenge, clientChallenge);
-}
-
-
-/*
-====================
-SV_AuthorizeIpPacket
-
-A packet has been returned from the authorize server.
-If we have a challenge adr for that ip, send the
-challengeResponse to it
-====================
-*/
-
-__optimize3 __regparm1 void SV_AuthorizeIpPacket( netadr_t *from ) {
-	int	challenge;
-	int	i;
-	char	*s;
-	char	*r;
-	char	*p;
-
-	if ( !NET_CompareBaseAdr( from, &svse.authorizeAddress )) {
-		Com_Printf( "SV_AuthorizeIpPacket: not from authorize server\n" );
-		return;
-	}
-
-	//This binds the serveraddress to a specific socket - No longer will this server be contacted over all sockets
-	if(NET_GetDefaultCommunicationSocket() == NULL){
-		NET_RegisterDefaultCommunicationSocket(from);
-	}
-
-	challenge = atoi( SV_Cmd_Argv( 1 ) );
-
-	for (i = 0 ; i < MAX_CHALLENGES ; i++) {
-		if ( svse.challenges[i].challenge == challenge ) {
-			break;
-		}
-	}
-	if ( i == MAX_CHALLENGES ) {
-		Com_Printf( "SV_AuthorizeIpPacket: challenge not found\n" );
-		return;
-	}
-	if(svse.challenges[i].connected){
-	    return;
-	}
-	// send a packet back to the original client
-	s = SV_Cmd_Argv( 2 );
-	r = SV_Cmd_Argv( 3 );	// reason
-	p = SV_Cmd_Argv( 5 );	//pbguid
-
-	if ( !Q_stricmp( s, "demo" ) ) {
-		// they are a demo client trying to connect to a real server
-		NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "error\nServer is not a demo server\n" );
-		// clear the challenge record so it won't timeout and let them through
-		Com_Memset( &svse.challenges[i], 0, sizeof( svse.challenges[i] ) );
-		return;
-	}
-	if ( !Q_stricmp( s, "accept" )) {
-		if(Q_stricmp( p, svse.challenges[i].pbguid)){
-			NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "error\nEXE_ERR_BAD_CDKEY");
-			Com_Memset( &svse.challenges[i], 0, sizeof( svse.challenges[i] ));
-			return;
-		}else{
-		        NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "challengeResponse %i", svse.challenges[i].challenge);
-		        svse.challenges[i].pingTime = com_frameTime;
-		        NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "print\n^2Success...");
-			svse.challenges[i].ipAuthorize = 1; //CD-KEY was valid
-		        return;
-		}
-	}
-
-	if (!Q_stricmp( s, "deny" )) {
-
-		svse.challenges[i].ipAuthorize = -1;
-		if(!Q_stricmp(r, "CLIENT_UNKNOWN_TO_AUTH")){
-
-			NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "print\nUnknown how to auth client\n");
-
-			if(svs.time - svse.challenges[i].firstTime > AUTHORIZE_TIMEOUT)
-			{
-
-				NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "challengeResponse %i", svse.challenges[i].challenge);
-			}
-			return;
-		}
-
-
-
-		NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "print\n^1Auth Failed.");
-		NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "challengeResponse %i", svse.challenges[i].challenge);
-		svse.challenges[i].pingTime = com_frameTime;
-		svse.challenges[i].ipAuthorize = -1; //CD-KEY was invalid
-		return;
-
-
-		Com_Memset( &svse.challenges[i], 0, sizeof( svse.challenges[i] ) );
-		return;
-	}
-
-	NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "print\n^1Auth Failed");
-	NET_OutOfBandPrint( NS_SERVER, &svse.challenges[i].adr, "challengeResponse %i", svse.challenges[i].challenge);
-	svse.challenges[i].pingTime = com_frameTime;
-	svse.challenges[i].ipAuthorize = -1; //CD-KEY was invalid
-}
-
-
-#else
 
 __optimize3 __regparm1 void SV_GetChallenge(netadr_t *from)
 {
@@ -352,8 +118,6 @@ __optimize3 __regparm1 void SV_GetChallenge(netadr_t *from)
 
 
 
-#endif
-
 /*
 ==================
 SV_DirectConnect
@@ -386,27 +150,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	challenge = atoi( Info_ValueForKey( userinfo, "challenge" ) );
 	qport = atoi( Info_ValueForKey( userinfo, "qport" ) );
 
-#ifdef COD4X17A
 
-	qboolean		pluginreject;
-	int			c;
-
-	// see if the challenge is valid
-	int		ping;
-	for (c=0 ; c < MAX_CHALLENGES ; c++) {
-		if (NET_CompareAdr(from, &svse.challenges[c].adr)) {
-			if ( challenge == svse.challenges[c].challenge ) {
-				break;		// good
-			}
-		}
-	}
-
-	if (c == MAX_CHALLENGES || challenge == 0) {
-		NET_OutOfBandPrint( NS_SERVER, from, "error\nNo or bad challenge for address.\n" );
-		return;
-	}
-
-#else
 
 	if(challenge != NET_CookieHash(from))
 	{
@@ -414,6 +158,15 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		return;
 	}
 
+#ifdef DEVRELEASE
+	char* xversion;
+	
+	xversion = Info_ValueForKey( userinfo, "xver");
+	if(Q_stricmp(xversion, COD4X_SUBVERSION))
+	{
+		NET_OutOfBandPrint( NS_SERVER, from, "error\nBad subversion. Server expects subversion %s but client is %s\n", COD4X_SUBVERSION, xversion );
+		return;		
+	}
 #endif
 
 	newcl = NULL;
@@ -441,9 +194,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 				"error\nConnection refused:\nAn uncompleted connection from %s has been detected\nPlease try again later\n",
 				NET_AdrToString(&cl->netchan.remoteAddress));
 			Com_Printf("Rejected connection from %s. This is a Fake-Player-DoS protection\n", NET_AdrToString(&cl->netchan.remoteAddress));
-#ifdef COD4X17A
-			Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-#endif
 			return;
 		}
 	}
@@ -452,33 +202,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	Com_sprintf(ip_str, sizeof(ip_str), "%s", NET_AdrToConnectionString( from ));
 	Info_SetValueForKey( userinfo, "ip", ip_str );
 
-#ifdef COD4X17A
-
-	if(!newcl && svse.challenges[c].pingTime){
-	        ping = com_frameTime - svse.challenges[c].pingTime;
-    		Com_Printf( "Client %i connecting with %i challenge ping\n", c, ping );
-
-        	svse.challenges[c].pingTime = 0;
-
-		if ( sv_minPing->integer && ping < sv_minPing->integer ) {
-			// don't let them keep trying until they get a big delay
-			NET_OutOfBandPrint( NS_SERVER, from, "error\nServer is for high ping players only minping: %i ms but your ping was: %i ms\n",sv_minPing->integer, ping);
-			Com_Printf("Client %i rejected on a too low ping\n", c);
-			// reset the address otherwise their ping will keep increasing
-			// with each connect message and they'd eventually be able to connect
-			svse.challenges[c].adr.port = 0;
-			Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-			return;
-		}
-		if ( sv_maxPing->integer && ping > sv_maxPing->integer ) {
-			NET_OutOfBandPrint( NS_SERVER, from, "error\nServer is for low ping players only maxping: %i ms but your ping was: %i ms\n",sv_maxPing->integer, ping);
-			Com_Printf("Client %i rejected on a too high ping\n", c);
-			Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-			return;
-		}
-	}
-
-#endif
 
 	Q_strncpyz(nick, Info_ValueForKey( userinfo, "name" ), 33);
 
@@ -488,50 +211,11 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	if(denied[0]){
             NET_OutOfBandPrint( NS_SERVER, from, "error\n%s\n", denied);
 		Com_Printf("Rejecting a connection from a banned network address: %s\n", NET_AdrToString(from));
-#ifdef COD4X17A
-	    Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-#endif
 	    return;
 	}
 
-#ifdef COD4X17A
-	Q_strncpyz(pbguid, svse.challenges[c].pbguid, sizeof(pbguid));
-#else
 	Q_strncpyz(pbguid, /*Info_ValueForKey( userinfo, "pbguid" )*/"[I:0:0]", sizeof(pbguid));
-#endif
 
-
-#ifdef COD4X17A
-	version = atoi( Info_ValueForKey( userinfo, "protocol" ));
-	if ( version != sv_protocol->integer ) {
-		if( sv_protocol->integer == 6 && version < 6)
-		{
-			NET_OutOfBandPrint( NS_SERVER, from, "error\nServer uses a different protocol version: %i\n You have to install the update to Call of Duty 4  v1.7", sv_protocol->integer );
-		}else{
-			NET_OutOfBandPrint( NS_SERVER, from, "error\nServer uses a different protocol version: %i\n You use protocol version: %i", sv_protocol->integer, version );
-		}
-		
-		Com_Printf("rejected connect from version %i\n", version);
-		Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-		return;
-	}
-
-	if(sv_authorizemode->integer == 1 && svse.challenges[c].ipAuthorize == -1)
-	{
-		pluginreject = qtrue;
-
-		PHandler_Event(PLUGINS_ONPLAYERCONNECTAUTHFAIL, from, &svse.challenges[c].pbguid, userinfo, &svse.challenges[c].ipAuthorize, &pluginreject);
-		if(pluginreject)
-		{
-			NET_OutOfBandPrint( NS_SERVER, from, "error\n^1Someone is using this CD Key");
-			if(svse.challenges[c].firstTime + 1000*30 < svs.time)
-			{
-				Com_Memset(&svse.challenges[c], 0, sizeof(challenge_t));
-			}
-			return;
-		}
-	}
-#else
 	version = atoi( Info_ValueForKey( userinfo, "protocol" ));
 	if ( version != sv_protocol->integer ) {
 
@@ -548,7 +232,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		}
 #endif
 	}
-#endif
 
 #ifdef COD4X18UPDATE
 	if(version < 7)
@@ -561,9 +244,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		NET_OutOfBandPrint( NS_SERVER, from, "error\nConnection rejected: No or invalid GUID found/provided.\n" );
 		Com_Printf("Rejected a connection: No or invalid GUID found/provided. Length: %i\n",
 		strlen(pbguid));
-#ifdef COD4X17A
-		Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-#endif
 		return;
 	}
 
@@ -591,11 +271,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 			canreserved = qfalse;
 		}
 		
-#ifdef COD4X17A
-		PHandler_Event(PLUGINS_ONPLAYERWANTRESERVEDSLOT, from, pbguid, userinfo, svse.challenges[c].ipAuthorize, &canreserved);
-#else
 		PHandler_Event(PLUGINS_ONPLAYERWANTRESERVEDSLOT, from, pbguid, userinfo, 0, &canreserved);
-#endif
 		if ( canreserved == qtrue) 
 		{
 			for ( j = 0; j < sv_privateClients->integer ; j++) {
@@ -610,9 +286,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	if(*sv_password->string && Q_strncmp(sv_password->string, password, 32)){
 		NET_OutOfBandPrint( NS_SERVER, from, "error\nThis server has set a join-password\n^1Invalid Password\n");
 		Com_Printf("Connection rejected from %s - Invalid Password\n", NET_AdrToString(from));
-#ifdef COD4X17A
-		Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-#endif
 		return;
 	}
 	//Process queue
@@ -637,12 +310,8 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	    }
 	}
 	for(i = 0 ; i < 10 ; i++){//Find highest slot or the one which is already assigned to this player
-#ifdef COD4X17A
-	    if(svse.connectqueue[i].firsttime == 0 || svse.connectqueue[i].challengeslot == c){
-#else
 	    if(svse.connectqueue[i].firsttime == 0 || svse.connectqueue[i].challengeslot == challenge){
-#endif
-		break;
+			break;
 	    }
 	}
 
@@ -682,33 +351,24 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		}
 		svse.connectqueue[i].attempts++;
 		svse.connectqueue[i].lasttime = Com_GetRealtime();
-#ifdef COD4X17A
-		svse.connectqueue[i].challengeslot = c;
-#else
 		svse.connectqueue[i].challengeslot = challenge;
-#endif
+
 		return;
 	}
 
-#ifdef COD4X17A
-	//gotnewcl:
-	Com_Memset(newcl, 0x00, sizeof(client_t));
-#else
-    #ifdef COD4X18UPDATE
+
+#ifdef COD4X18UPDATE
 	if(version == sv_protocol->integer || newcl->challenge != challenge || newcl->state != CS_CONNECTED)
 	{
 		Com_Memset(newcl, 0x00, sizeof(client_t));
 	}
-    #else
+#else
 	Com_Memset(newcl, 0x00, sizeof(client_t));
-    #endif
 #endif
 
-#ifdef COD4X17A
-	newcl->authentication = svse.challenges[c].ipAuthorize;
-#else
+
 	newcl->authentication = 0;
-#endif
+
 	newcl->power = 0; //Sets the default power for the client
         newcl->challenge = challenge; // save the challenge
 	// (build a new connection
@@ -720,11 +380,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 
         Q_strncpyz(cl->originguid, pbguid, 33);
         Q_strncpyz(cl->pbguid, pbguid, 33);	// save the pbguid
-#ifdef COD4X17A
-        if(newcl->authentication != 1 && sv_authorizemode->integer != -1){
-            Com_Memset(newcl->pbguid, '0', 8);
-        }
-#endif
+
         //    char ret[33];
         //    Com_sprintf(ret,sizeof(ret),"NoGUID*%.2x%.2x%.2x%.2x%.4x",from->ip[0],from->ip[1],from->ip[2],from->ip[3],from->port);
         //    Q_strncpyz(newcl->pbguid, ret, sizeof(newcl->pbguid));	// save the pbguid
@@ -741,9 +397,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
         if(denied[0]){
                 NET_OutOfBandPrint( NS_SERVER, from, "error\n%s", denied);
 		Com_Printf("Rejecting a connection from a banned GUID/UID\n");
-#ifdef COD4X17A
-		Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-#endif
+
                 svse.connectqueue[i].lasttime = 0;
                 svse.connectqueue[i].firsttime = 0;
                 svse.connectqueue[i].challengeslot = 0;
@@ -751,30 +405,12 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		return;
         }
 
-#ifdef COD4X17A
-#ifdef PUNKBUSTER
-
-	const char		*PunkBusterStatus;
-
-	if(strstr(Cvar_GetVariantString("noPbGuids"), newcl->originguid) && 32 == strlen(newcl->originguid) && newcl->authentication == 1){
-		newcl->noPb = qtrue;
-	}
-	if(newcl->noPb == qfalse){
-		PunkBusterStatus = PbAuthClient(NET_AdrToString(from), atoi(Info_ValueForKey( userinfo, "cl_punkbuster" )), newcl->pbguid);
-		if(PunkBusterStatus){
-		    NET_OutOfBandPrint( NS_SERVER, from, "%s", PunkBusterStatus);
-		    Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-		    return;
-		}
-	}
-#endif
-#endif
 	newcl->unsentVoiceData = 0;
 	newcl->hasVoip = 1;
 	newcl->gentity = SV_GentityNum(clientNum);
 	newcl->clscriptid = Scr_AllocArray();
 	newcl->protocol = version;
-#ifndef COD4X17A
+
 #ifdef COD4X18UPDATE
 	if(newcl->protocol != sv_protocol->integer)
 	{
@@ -783,7 +419,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		newcl->needupdate = qfalse;
 	}
 #endif
-#endif
+
 
 	// get the game a chance to reject this connection or modify the userinfo
 	denied2 = ClientConnect(clientNum, newcl->clscriptid);
@@ -792,9 +428,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		NET_OutOfBandPrint( NS_SERVER, from, "error\n%s\n", denied2 );
 		Com_Printf("Game rejected a connection: %s\n", denied2);
 		SV_FreeClientScriptId(newcl);
-#ifdef COD4X17A
-		Com_Memset( &svse.challenges[c], 0, sizeof( svse.challenges[c] ));
-#endif
 		return;
 	}
 
@@ -804,9 +437,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 			 newcl->unsentBuffer, sizeof(newcl->unsentBuffer),
 			 newcl->fragmentBuffer, sizeof(newcl->fragmentBuffer));
 
-#ifdef COD4X17A
-	svse.challenges[c].connected = qtrue;
-#else
+
 	if(SV_SetupReliableMessageProtocol(newcl) == qfalse)
 	{
 		NET_OutOfBandPrint( NS_SERVER, from, "error\nServer is out of memory\n");
@@ -814,7 +445,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		SV_FreeClientScriptId(newcl);
 		return;
 	}
-#endif
+
 	Com_Printf( "Going from CS_FREE to CS_CONNECTED for %s num %i guid %s from: %s\n", nick, clientNum, newcl->pbguid, NET_AdrToConnectionString(from));
 	
 	Q_strncpyz(newcl->xversion, Info_ValueForKey( userinfo, "xver"), sizeof(newcl->xversion));
@@ -824,7 +455,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	newcl->lastPacketTime = svs.time;
 	newcl->lastConnectTime = svs.time;
 
-#ifndef COD4X17A
 #ifdef COD4X18UPDATE
 	if(newcl->needupdate)
 	{
@@ -837,7 +467,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		SV_ConnectWithUpdateProxy(newcl);
 		return;
 	}
-#endif
 #endif
 
 	SV_UserinfoChanged(newcl);
@@ -866,48 +495,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	}
 }
 
-#ifdef COD4X17A
-__optimize3 __regparm2 void SV_ReceiveStats(netadr_t *from, msg_t* msg){
 
-	unsigned short qport;
-	client_t *cl;
-	byte curstatspacket;
-	byte var_02;
-	int buffersize;
-
-	qport = MSG_ReadShort( msg );
-	
-	// find which client the message is from
-	cl = SV_ReadPackets(from, qport);
-	if(cl == NULL)
-	{
-		Com_DPrintf("SV_ReceiveStats: Received statspacket from disconnected remote client: %s qport: %d\n", NET_AdrToString(from), qport);
-		return;
-	}
-	
-	curstatspacket = MSG_ReadByte(msg);
-	if(curstatspacket > 6){
-		Com_Printf("Invalid stat packet %i of stats data\n", curstatspacket);
-		return;
-	}
-	Com_Printf("Received packet %i of stats data\n", curstatspacket);
-	if((curstatspacket+1)*1240 >= sizeof(cl->stats)){
-		buffersize = sizeof(cl->stats)-(curstatspacket*1240);
-	}else{
-		buffersize = 1240;
-	}
-	MSG_ReadData(msg, &cl->stats[1240*curstatspacket], buffersize);
-
-	cl->receivedstats |= (1 << curstatspacket);
-	var_02 = cl->receivedstats;
-	var_02 = ~var_02;
-	var_02 = var_02 & 127;
-	cl->lastPacketTime = svs.time;
-
-	NET_OutOfBandPrint( NS_SERVER, from, "statResponse %i", var_02 );
-}
-
-#else
 #ifdef COD4X18UPDATE
 
 
@@ -935,10 +523,60 @@ __optimize3 __regparm2 void SV_ReceiveStats(netadr_t *from, msg_t* msg){
 	NET_OutOfBandPrint( NS_SERVER, from, "statResponse %i", var_02 );
 }
 
+#endif
 
 
-#endif
-#endif
+/*
+client->receivedstats reset by SV_SpawnServer
+*/
+void SV_ReceiveStats_f(client_t* cl, msg_t* msg)
+{
+	int type, size;
+	type = MSG_ReadByte(msg);
+	if(type == 0)
+	{
+		cl->receivedstats = 1;
+		return;
+	}
+	if(type != 1)
+	{
+		return;
+	}
+	size = MSG_ReadLong(msg);
+	if(size != sizeof(cl->stats))
+	{
+		SV_DropClient(cl, "Received stats data of invalid length");
+	}
+	if(cl->receivedstats == 1)
+	{
+		SV_DropClient(cl, "Received stats although it was not requested from client");
+	}
+	MSG_ReadData(msg, cl->stats, sizeof(cl->stats));
+	Com_Printf("Received packet %i of stats data\n", 0);
+	cl->receivedstats = 1;
+}
+
+
+qboolean SV_RequestStats(client_t* client)
+{
+	msg_t msg;
+	byte data[1024];
+	if((signed char)client->receivedstats == -1)
+	{
+		return qfalse;
+	}
+	if(client->receivedstats == 1)
+	{
+		return qtrue;
+	}
+	MSG_Init(&msg, data, sizeof(data));
+	MSG_WriteLong(&msg, 0);
+	MSG_WriteLong(&msg, clc_statscommands);
+	MSG_WriteByte(&msg, 0);
+	SV_SendReliableServerCommand(client, &msg);
+	client->receivedstats = -1;
+	return qfalse;
+}
 
 
 /*
@@ -955,10 +593,10 @@ void SV_UserinfoChanged( client_t *cl ) {
 	int	i;
 	int	len;
 
-#ifndef COD4X17A	
+
 	if(cl->state == CS_CONNECTED)
 	{
-#endif
+
 		// name for C code
 		Q_strncpyz( cl->name, Info_ValueForKey (cl->userinfo, "name"), sizeof(cl->name) );
 		if(!Q_isprintstring(cl->name) || strstr(cl->name,"&&") || strstr(cl->name,"///")){
@@ -969,11 +607,11 @@ void SV_UserinfoChanged( client_t *cl ) {
 			cl->usernamechanged = UN_VERIFYNAME;
 		}
 		Q_strncpyz(cl->shortname, cl->name, sizeof(cl->shortname));
-#ifndef COD4X17A	
+	
 	}else{
 		Info_SetValueForKey( cl->userinfo, "name", cl->name);
 	}
-#endif
+
 	// rate command
 	// if the client is on the same subnet as the server and we aren't running an
 	// internet public server, assume they don't need a rate choke
@@ -1098,33 +736,17 @@ __cdecl void SV_DropClient( client_t *drop, const char *reason ) {
 	SV_CloseDownload(drop);
 	G_DestroyAdsForPlayer(drop);
 
-#ifdef COD4X17A
-	challenge_t *challenge;
-
-	if ( !drop->gentity ) {
-		// see if we already (maybe still ??) have a challenge for this ip
-		challenge = &svse.challenges[0];
-
-		for ( i = 0 ; i < MAX_CHALLENGES ; i++, challenge++ ) {
-			if ( NET_CompareAdr( &drop->netchan.remoteAddress, &challenge->adr ) ) {
-				Com_Memset(challenge, 0, sizeof(challenge_t));
-				break;
-			}
-		}
-	}
-#else
 	SV_DisconnectReliableMessageProtocol(drop);
 
-#endif
 
 	clientnum = drop - svs.clients;
 
 	if(!reason)
 		reason = "Unknown reason for dropping";
 
-#ifndef COD4X17A
+
 	SV_NotifySApiDisconnect(drop);
-#endif
+
 
 	Com_Printf("Player %s^7, %i dropped: %s\n", clientName, clientnum, reason);
 	HL2Rcon_EventClientLeave(clientnum);
@@ -1641,7 +1263,7 @@ void SV_SetUid(unsigned int clnum, unsigned int uid){
 	
     client_t *cl = &svs.clients[clnum];
 
-#ifndef COD4X17A
+
 	if(cl->uid == 0)
 	{
 		Com_PrintError("setUid: This command is in CoD4X18+ deprecated. The requested UID got still set but conflicts can arise. This function will work for limited time only\n");
@@ -1649,7 +1271,7 @@ void SV_SetUid(unsigned int clnum, unsigned int uid){
 		Com_PrintError("setUid: This command is in CoD4X18+ deprecated. The requested UID got not set as the player has already an UID\n");
 		return;
 	}
-#endif
+
     if(cl->state < CS_CONNECTED)
     {
         return;
@@ -1880,23 +1502,7 @@ void SV_SendClientGameState( client_t *client ) {
 	while(client->state != CS_FREE && client->netchan.unsentFragments){
 		SV_Netchan_TransmitNextFragment(client);
 	}
-#ifdef COD4X17A
-	if(!client->canNotReliable){
 
-		if(client->receivedstats != 127)
-		{
-			if(!client->receivedstats)
-				NET_OutOfBandPrint(NS_SERVER, &client->netchan.remoteAddress, "requeststats\n");
-
-			return;
-		}
-
-	}else{
-		Com_Memset(client->stats, 0, sizeof(client->stats));
-		client->receivedstats = 127;
-	}
-
-#else
 	sapi = SV_ConnectSApi(client);
 	stats = SV_RequestStats(client);
 
@@ -1904,7 +1510,7 @@ void SV_SendClientGameState( client_t *client ) {
 	{
 		return;
 	}
-#endif
+
 	SV_SetServerStaticHeader();
 
 	if(client->state < CS_PRIMED)
@@ -2206,24 +1812,6 @@ static void SV_ResetPureClient_f( client_t *cl ) {
 
 /*
 ==================
-SV_BeginDownload_f
-==================
-*/
-void SV_BeginDownload_f( client_t *cl ) {
-
-	// Kill any existing download
-	SV_CloseDownload( cl );
-
-	// cl->downloadName is non-zero now, SV_WriteDownloadToClient will see this and open
-	// the file itself
-	cl->wwwDl_var01 = 1;
-	Q_strncpyz( cl->downloadName, SV_Cmd_Argv( 1 ), sizeof( cl->downloadName ) );
-}
-
-
-
-/*
-==================
 SV_StopDownload_f
 
 Abort a download if in progress
@@ -2421,6 +2009,12 @@ Selects the blocks we want to download
 void SV_SelectDownloadBlocksX_f( client_t *cl, msg_t* msg )
 {
 
+	if(cl->download == 0)
+	{
+		Com_DPrintf("SV_SelectDownloadBlocksX_f a serverdownload is no longer in progress - ignoring this command\n");
+		return;
+	}
+
     cl->downloadBeginOffset = MSG_ReadLong(msg);
     cl->downloadNumBytes = MSG_ReadLong(msg);
     cl->downloadEOF = qfalse;
@@ -2477,21 +2071,21 @@ void SV_ExecuteDownloadCmd(client_t* client, msg_t* msg)
             SV_SelectDownloadBlocksX_f( client, msg );
             return;
 
-	case CLC_WWWDLBBL8R:
-	    SV_WWWDownload_BBL8R_f(client);
-	    return;
+		case CLC_WWWDLBBL8R:
+			SV_WWWDownload_BBL8R_f(client);
+			return;
 
-	case CLC_WWWDLDONE:
-	    SV_WWWDownload_Done_f(client);
-	    return;
+		case CLC_WWWDLDONE:
+			SV_WWWDownload_Done_f(client);
+			return;
 
-	case CLC_WWWDLFAIL:
-	    SV_WWWDownload_Fail_f(client);
-	    return;
+		case CLC_WWWDLFAIL:
+			SV_WWWDownload_Fail_f(client);
+			return;
 
-	case CLC_WWWDLCHKFAIL:
-	    SV_WWWDownload_ChkFail_f(client);
-	    return;
+		case CLC_WWWDLCHKFAIL:
+			SV_WWWDownload_ChkFail_f(client);
+			return;
 
         default:
             return;
@@ -2520,66 +2114,7 @@ void SV_UnmutePlayer_f(client_t* cl){
 	cl->mutedClients[muteClient] = 0;
 }
 
-#ifndef COD4X17A
 
-/*
-    client->receivedstats reset by SV_SpawnServer
-*/
-
-void SV_ReceiveStats_f(client_t* cl, msg_t* msg)
-{
-	int type, size;
-
-
-	type = MSG_ReadByte(msg);
-	if(type == 0)
-	{
-		cl->receivedstats = 1;
-		return;
-	}
-	if(type != 1)
-	{
-		return;
-	}
-	size = MSG_ReadLong(msg);
-	if(size != sizeof(cl->stats))
-	{
-		SV_DropClient(cl, "Received stats data of invalid length");
-	}
-	if(cl->receivedstats == 1)
-	{
-		SV_DropClient(cl, "Received stats although it was not requested from client");
-	}
-	MSG_ReadData(msg, cl->stats, sizeof(cl->stats));
-
-	Com_Printf("Received packet %i of stats data\n", 0);
-	cl->receivedstats = 1;
-}
-
-qboolean SV_RequestStats(client_t* client)
-{
-    msg_t msg;
-    byte data[1024];
-
-    if((signed char)client->receivedstats == -1)
-    {
-        return qfalse;
-    }
-    if(client->receivedstats == 1)
-    {
-        return qtrue;
-    }
-    MSG_Init(&msg, data, sizeof(data));
-    MSG_WriteLong(&msg, 0);
-    MSG_WriteLong(&msg, clc_statscommands);
-    MSG_WriteByte(&msg, 0);
-    SV_SendReliableServerCommand(client, &msg);
-    client->receivedstats = -1;
-    return qfalse;
-}
-
-
-#endif
 
 typedef struct {
 	char    *name;
