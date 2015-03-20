@@ -1787,6 +1787,7 @@ __cdecl void SV_WriteDownloadToClient( client_t *cl ) {
 			MSG_WriteLong( &msg, svc_download );
 			SV_WWWRedirect(cl, &msg);
 			SV_SendReliableServerCommand(cl, &msg);
+			cl->wwwDlAck = qtrue; //Reliable transport = ack will always succeed
 			return;
 		}
 
@@ -2311,80 +2312,87 @@ SV_WWWDownload_f
 
 ==================
 */
-void SV_WWWDownload_f( client_t *cl ) {
 
-	char* download = SV_Cmd_Argv( 1 );
 
-	if(!cl->wwwDownloadStarted)
+void SV_WWWDownload_BBL8R_f(client_t *cl)
+{
+	if(!cl->wwwDownloadStarted || !cl->wwwDlAck)
 	{
-		Com_PrintWarning("SV_WWWDownload: unexpected wwwdl '%s' for client '%s'\n", download, cl->name);
+		Com_PrintWarning("SV_WWWDownload: unexpected wwwdl for client '%s'\n", cl->name);
+	}
+
+	SV_DropClient(cl, "Client dropped to download files");	
+}
+
+
+void SV_WWWDownload_Done_f(client_t *cl)
+{
+	if(!cl->wwwDownloadStarted || !cl->wwwDlAck)
+	{
+		Com_PrintWarning("SV_WWWDownload: unexpected wwwdl for client '%s'\n", cl->name);
 		SV_DropClient(cl, "Unexpected www download message.");
 		return;
 	}
-	if(!Q_stricmp(download, "ack"))
-	{
-	    if(cl->wwwDlAck)
-		Com_PrintWarning("Duplicated wwwdl ack from client: '%s'\n", cl->name);
-	
-	    cl->wwwDlAck = qtrue;
-	
-	}else if(!Q_stricmp(download, "bbl8r")){
-	
-		SV_DropClient(cl, "Client dropped to download files");
-	
-	}else if(!cl->wwwDlAck){
 
-		Com_PrintWarning("SV_WWWDownload: unexpected wwwdl '%s' for client '%s'\n", download, cl->name);
-		SV_DropClient(cl, "Unexpected www download message.");
-
-	}else if(!Q_stricmp(download, "done")){
-	
-		cl->wwwDl_var01 = 0;
-		if ( cl->download ) {
-			FS_FCloseFile( cl->download );
-		}
-		cl->download = 0;
-		*cl->downloadName = 0;
-		cl->wwwDownloadStarted = 0;
-		cl->wwwDlAck = 0;
-
-	}else if(!Q_stricmp(download, "fail")){
-
-		Com_PrintWarning("Client '%s' reported that the http download of '%s' failed, falling back to a server download\n", cl->name, cl->downloadName);
-
-		cl->wwwDl_var01 = 0;
-		if ( cl->download ) {
-			FS_FCloseFile( cl->download );
-		}
-		cl->download = 0;
-		*cl->downloadName = 0;
-		cl->wwwDownloadStarted = 0;
-		cl->wwwDlAck = 0;
-		cl->wwwDl_var03 = 1;
-
-		SV_SendClientGameState(cl);
-
-	}else if(!Q_stricmp(download, "chkfail")){
-
-		Com_PrintWarning("Client '%s' reports that the redirect download for '%s' had wrong checksum.\n        You should make sure that your files on your redirect are the same files you have on your server\n", cl->name, cl->downloadName);
-		
-		cl->wwwDl_var01 = 0;
-		if ( cl->download ) {
-			FS_FCloseFile( cl->download );
-		}
-		cl->download = 0;
-		*cl->downloadName = 0;
-		cl->wwwDownloadStarted = 0;
-		cl->wwwDlAck = 0;
-		cl->wwwDl_var03 = 1;
-
-		SV_SendClientGameState(cl);
-
-	}else{
-		Com_PrintWarning("SV_WWWDownload: Unknown wwwdl subcommand '%s' for client '%s'\n", download, cl->name);
-		SV_DropClient(cl, "Unexpected www download message.");
+	cl->wwwDl_var01 = 0;
+	if ( cl->download ) {
+		FS_FCloseFile( cl->download );
 	}
+	cl->download = 0;
+	*cl->downloadName = 0;
+	cl->wwwDownloadStarted = 0;
+	cl->wwwDlAck = 0;
 }
+
+
+void SV_WWWDownload_Fail_f(client_t *cl)
+{
+	if(!cl->wwwDownloadStarted || !cl->wwwDlAck)
+	{
+		Com_PrintWarning("SV_WWWDownload: unexpected wwwdl for client '%s'\n", cl->name);
+		SV_DropClient(cl, "Unexpected www download message.");
+		return;
+	}
+
+	Com_PrintWarning("Client '%s' reported that the http download of '%s' failed, falling back to a server download\n", cl->name, cl->downloadName);
+	cl->wwwDl_var01 = 0;
+	if ( cl->download ) {
+		FS_FCloseFile( cl->download );
+	}
+	cl->download = 0;
+	*cl->downloadName = 0;
+	cl->wwwDownloadStarted = 0;
+	cl->wwwDlAck = 0;
+	cl->wwwDl_var03 = 1;
+
+	SV_SendClientGameState(cl);
+}
+
+void SV_WWWDownload_ChkFail_f(client_t *cl)
+{
+	if(!cl->wwwDownloadStarted || !cl->wwwDlAck)
+	{
+		Com_PrintWarning("SV_WWWDownload: unexpected wwwdl for client '%s'\n", cl->name);
+		SV_DropClient(cl, "Unexpected www download message.");
+		return;
+	}
+
+
+	Com_PrintWarning("Client '%s' reports that the redirect download for '%s' had wrong checksum.\n        You should make sure that your files on your redirect are the same files you have on your server\n", cl->name, cl->downloadName);
+
+	cl->wwwDl_var01 = 0;
+	if ( cl->download ) {
+		FS_FCloseFile( cl->download );
+	}
+	cl->download = 0;
+	*cl->downloadName = 0;
+	cl->wwwDownloadStarted = 0;
+	cl->wwwDlAck = 0;
+	cl->wwwDl_var03 = 1;
+	SV_SendClientGameState(cl);
+}
+
+
 
 /*
 ==================
@@ -2440,12 +2448,17 @@ typedef enum
     CLC_BEGINDOWNLOAD,
     CLC_DONEDOWNLOAD,
     CLC_STOPDOWNLOAD,
-    CLC_REQUESTDLBLOCKS
+    CLC_REQUESTDLBLOCKS,
+    CLC_WWWDLFAIL,
+    CLC_WWWDLDONE,
+    CLC_WWWDLBBL8R,
+    CLC_WWWDLCHKFAIL
 }clc_downloadsubcommands_t;
 
 void SV_ExecuteDownloadCmd(client_t* client, msg_t* msg)
 {
     int subcmd = MSG_ReadByte(msg);
+
     switch(subcmd)
     {
         case CLC_BEGINDOWNLOAD:
@@ -2463,6 +2476,22 @@ void SV_ExecuteDownloadCmd(client_t* client, msg_t* msg)
         case CLC_REQUESTDLBLOCKS:
             SV_SelectDownloadBlocksX_f( client, msg );
             return;
+
+	case CLC_WWWDLBBL8R:
+	    SV_WWWDownload_BBL8R_f(client);
+	    return;
+
+	case CLC_WWWDLDONE:
+	    SV_WWWDownload_Done_f(client);
+	    return;
+
+	case CLC_WWWDLFAIL:
+	    SV_WWWDownload_Fail_f(client);
+	    return;
+
+	case CLC_WWWDLCHKFAIL:
+	    SV_WWWDownload_ChkFail_f(client);
+	    return;
 
         default:
             return;
@@ -2563,7 +2592,7 @@ static ucmd_t ucmds[] = {
 	{"disconnect", SV_Disconnect_f, 1},
 	{"cp", SV_VerifyPaks_f, 0},
 	{"vdr", SV_ResetPureClient_f, 0},
-
+/*
 	{"download", SV_BeginDownload_f, 0},
 	{"nextdl", SV_NextDownload_f, 0},
 	{"stopdl", SV_StopDownload_f, 0},
@@ -2571,6 +2600,7 @@ static ucmd_t ucmds[] = {
 	{"retransdl", SV_RetransmitDownload_f, 0},
 
 	{"wwwdl", SV_WWWDownload_f, 0},
+*/
 	{"muteplayer", SV_MutePlayer_f, 0},
 	{"unmuteplayer", SV_UnmutePlayer_f, 0},
 	{NULL, NULL, 0}

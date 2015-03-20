@@ -826,8 +826,10 @@ qboolean SV_RequestStats(client_t* client);
 #ifdef COD4X18UPDATE
 void SV_ConnectWithUpdateProxy(client_t *cl);
 #endif
-
+void SV_WriteChecksumInfo(msg_t* msg, const char* filename);
 #endif
+
+
 
 
 

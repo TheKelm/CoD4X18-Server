@@ -1634,16 +1634,63 @@ void HTTPServer_ReadSessionId(ftRequest_t* request, char* sessionkey, int len)
 	
 }
 
+#define MAX_HTTPCLIENTS 256
+
+ftRequest_t* httpServerClientPointers[MAX_HTTPCLIENTS +1];
+
+ftRequest_t* HTTPServer_ConnectionIdToPointer(int id)
+{
+    if(id <= 0 || id > MAX_HTTPCLIENTS +1)
+    {
+        return NULL;
+    }
+    return httpServerClientPointers[id];
+}
+
+int HTTPServer_NewConnectionId(ftRequest_t* ftr)
+{
+    int i;
+
+    if(ftr == NULL)
+    {
+        return -1;
+    }
+
+    for(i = 1; i < MAX_HTTPCLIENTS +1; ++i)
+    {
+        if(httpServerClientPointers[i] == NULL)
+        {
+            httpServerClientPointers[i] = ftr;
+            return i;
+        }
+    }
+    return -1;
+
+}
+
+void HTTPServer_ClearConnectionId(int id)
+{
+    if(id <= 0 || id > MAX_HTTPCLIENTS +1)
+    {
+        return;
+    }
+    httpServerClientPointers[id] = NULL;
+}
+
 
 qboolean HTTPServer_Event(netadr_t* from, msg_t* msg, int connectionId)
 {
 	char sessionkey[128];
 	httpPostVals_t values[MAX_POST_VALS];
 
-	ftRequest_t* request = (ftRequest_t*)connectionId;
+	ftRequest_t* request = HTTPServer_ConnectionIdToPointer(connectionId);
 	int ret;
-	
-	
+
+	if(request == NULL)
+	{
+		return qtrue;
+	}
+
 	if (request->finallen == -1 || request->recvmsg.cursize < request->finallen) {
 		ret = HTTPServer_ReadMessage(from, msg, request);
 		if(ret  == -1)
@@ -1695,13 +1742,16 @@ tcpclientstate_t HTTPServer_AuthEvent(netadr_t* from, msg_t* msg, int *connectio
 	if(request == NULL)
 		return TCP_AUTHBAD;
 	
-	*connectionId = (int)request;
-
-	
+	*connectionId = HTTPServer_NewConnectionId(request);
+	if(*connectionId < 1)
+	{
+		FT_FreeRequest(request);
+		return TCP_AUTHBAD;
+	}
 	if (HTTPServer_Event(from, msg, *connectionId) == qtrue)
 	{
 		return TCP_AUTHBAD;
-	}	
+	}
 
 	return TCP_AUTHSUCCESSFULL;
 }
@@ -1710,11 +1760,11 @@ tcpclientstate_t HTTPServer_AuthEvent(netadr_t* from, msg_t* msg, int *connectio
 void HTTPServer_Disconnect(netadr_t* from, int connectionId)
 {
 	ftRequest_t* request;
-	if(connectionId)
+	request = HTTPServer_ConnectionIdToPointer(connectionId);
+	if(request)
 	{
-		request = (ftRequest_t*)connectionId;
 		FT_FreeRequest(request);
-
+		HTTPServer_ClearConnectionId(connectionId);
 	}
 }
 
