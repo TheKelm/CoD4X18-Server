@@ -440,10 +440,10 @@ __cdecl void G_Say( gentity_t *ent, gentity_t *target, int mode, const char *cha
 	    return;
         }
 
-	if(strstr(textptr, "login") || strstr(textptr, "password"))
+	if(Q_stricmpn(textptr, "changepassword", 14) == 0)
 	{
-	    SV_ExecuteRemoteCmd(ent->s.number, textptr);
-	    return;
+		SV_ExecuteRemoteCmd(ent->s.number, textptr);
+		return;
 	}
 
 	switch ( mode )

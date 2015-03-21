@@ -270,86 +270,6 @@ static void Auth_SetAdmin_f() {
 }
 
 
-#ifdef COD4X17A
-
-void Auth_SetAdminWithPassword_f( void ){
-
-	const char* username;
-	const char* password;
-	const char* sha256;
-	byte buff[129];
-	char salt[65];
-	unsigned long size = sizeof(salt);
-	int power, i,uid;
-	authData_admin_t* user;
-	authData_admin_t* free = NULL;
-	mvabuf;
-
-
-	if(Cmd_Argc() != 4){
-		Com_Printf("Usage: AdminAddAdminWithPassword <username> <password> <power>\n", Cmd_Argv(0));
-		Com_Printf( "Where username is loginname for this user\n" );
-		Com_Printf( "Where password is the initial 6 characters long or longer password for this user which should get changed by the user on first login\n" );		
-		Com_Printf( "Where power is one of the following: Any number between 1 and 100\n" );
-		Com_Printf( "Note: Use the command \"AdminAddAdmin\" to change the power of an admin\n" );
-		Com_Printf("^1IMPORTANT: ^7This command is for the high privileged badmin only\n");
-		return;
-	}
-
-	username = Cmd_Argv(1);
-	password = Cmd_Argv(2);
-	power = atoi(Cmd_Argv(3));
-	
-	if(!username || !*username || !password || strlen(password) < 6 || power < 1 || power > 100){
-		Com_Printf("Usage: AdminSetWithPassword <username> <password> <power>\n", Cmd_Argv(0));
-		Com_Printf( "Where username is loginname for this user\n" );
-		Com_Printf( "Where password is the initial 6 characters long or longer password for this user which should get changed by the user on first login\n" );		
-		Com_Printf( "Where power is one of the following: Any number between 1 and 100\n" );
-		Com_Printf("^1IMPORTANT: ^7This command is for the high privileged badmin only\n");
-		return;
-	}
-
-	NV_ProcessBegin();
-	
-	uid = ++auth_admins.maxUID;
-	    
-		
-	for(i = 0, user = auth_admins.admins; i < MAX_AUTH_ADMINS; i++, user++)
-	{
-
-		if(!Q_stricmp(user->username, username)){
-			Com_Printf("An admin with this username is already registered\n");
-			return;
-		}
-
-		if(!free && user->uid < 1)
-		{
-			free = user;
-		}
-	}
-	
-	if(!free)
-	{
-		Com_Printf("Too many registered admins. Limit is: %d\n", MAX_AUTH_ADMINS);
-		return;
-	}
-
-	Com_RandomBytes(buff, sizeof(buff));
-	Sec_HashMemory(SEC_HASH_SHA256,buff,sizeof(buff),salt,&size,qfalse);
-
-
-	sha256 = Com_SHA256(va("%s.%s", password, salt));
-
-	Q_strncpyz(free->username, username, sizeof(free->username));
-	Q_strncpyz(free->sha256, sha256, sizeof(free->sha256));
-	Q_strncpyz(free->salt, (char*)salt, sizeof(free->salt));
-	free->power = power;
-	free->uid = uid;
-	Com_Printf("Registered user with Name: %s Power: %d UID: %d\n", free->username, power, uid);
-	NV_ProcessEnd();
-}
-
-#endif
 
 void Auth_UnsetAdmin_f( void ){
 
@@ -522,9 +442,6 @@ void Auth_ChangeOwnPassword_f()
 void Auth_ClearAdminList( )
 {
     Com_Memset(auth_admins.admins, 0, sizeof(auth_admins.admins));
-#ifdef COD4X17A
-    auth_admins.maxUID = 300000000;
-#endif
 }
 
 qboolean Auth_AddAdminToList(const char* username, const char* password, const char* salt, int power, int uid){
@@ -581,10 +498,6 @@ qboolean Auth_AddAdminToList(const char* username, const char* password, const c
 	{
 		free->power = power;
 	}
-#ifdef COD4X17A
-	if(uid > auth_admins.maxUID && uid < 400000000)
-	    auth_admins.maxUID = uid;
-#endif
 	return qtrue;
 }
 
@@ -685,13 +598,9 @@ void Auth_Init()
 
 	Cmd_AddPCommand("AdminRemoveAdmin", Auth_UnsetAdmin_f, 95);
 	Cmd_AddPCommand("AdminAddAdmin", Auth_SetAdmin_f, 95);
-#ifdef COD4X17A
-	Cmd_AddPCommand("AdminAddAdminWithPassword", Auth_SetAdminWithPassword_f, 95);
-#endif
 	Cmd_AddPCommand("AdminListAdmins", Auth_ListAdmins_f, 80);
 	Cmd_AddPCommand("AdminChangePassword", Auth_ChangePasswordByMasterAdmin_f, 95);
 	Cmd_AddPCommand("AdminChangeCommandPower", Auth_SetCommandPower_f, 98);
-	Cmd_AddPCommand("Login", Auth_Login_f, 1);
 	Cmd_AddPCommand("ChangePassword", Auth_ChangeOwnPassword_f, 10);
 }
 

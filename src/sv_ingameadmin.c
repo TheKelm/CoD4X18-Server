@@ -129,11 +129,7 @@ qboolean SV_ExecuteRemoteCmd(int clientnum, const char *msg){
 
 
 	if(!Q_stricmpn(cmd, "auth", 4)){
-		if(!Q_stricmp(cmd, "authlogin"))
-		{
-			Q_strncpyz(cmd, "login", sizeof(cmd));
-		}
-		else if(!Q_stricmp(cmd, "authChangePassword"))
+		if(!Q_stricmp(cmd, "authChangePassword"))
 		{
 			Q_strncpyz(cmd, "changePassword", sizeof(cmd));
 		}
@@ -165,7 +161,7 @@ qboolean SV_ExecuteRemoteCmd(int clientnum, const char *msg){
 	power = Auth_GetClPower(cl);
 	powercmd = Cmd_GetPower(cmd);
 
-    if(strstr(cmd, "login") || strstr(cmd, "password"))
+    if(strstr(cmd, "password"))
     {
             printPtr = "hiddencmd";
             critcmd = qtrue;

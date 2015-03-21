@@ -1051,12 +1051,7 @@ void	Cmd_ExecuteString( const char *text )
 	{
 		arg0[0] = 'c';
 	}else if(!Q_stricmpn(arg0, "auth", 4)){
-		if(!Q_stricmp(arg0, "authlogin"))
-		{
-			Q_strncpyz(arg0, "login", sizeof(arg0));
-			Com_PrintWarning("\"authlogin\" is deprecated and will be removed soon. Use \"login\" instead\n");
-		}
-		else if(!Q_stricmp(arg0, "authChangePassword"))
+		if(!Q_stricmp(arg0, "authChangePassword"))
 		{
 			Q_strncpyz(arg0, "changePassword", sizeof(arg0));
 			Com_PrintWarning("\"authchangePassword\" is deprecated and will be removed soon. Use \"changePassword\" instead\n");
