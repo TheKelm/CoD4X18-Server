@@ -44,9 +44,7 @@
 #include "hl2rcon.h"
 #include "crc.h"
 
-#ifndef COD4X17A
 #include "sapi.h"
-#endif
 
 #include <string.h>
 #include <stdarg.h>
@@ -824,11 +822,7 @@ __optimize3 __regparm1 void SVC_Info( netadr_t *from ) {
 
 
 	//Info_SetValueForKey( infostring, "gamename", com_gamename->string );
-#ifdef COD4X17A
-	Info_SetValueForKey(infostring, "protocol", va("%d", sv_protocol->integer));
-#else
 	Info_SetValueForKey(infostring, "protocol", "6");
-#endif
 	Info_SetValueForKey( infostring, "hostname", sv_hostname->string );
 
 	if(sv_authorizemode->integer == 1)		//Backward compatibility
@@ -1399,8 +1393,6 @@ void SVC_SourceEngineQuery_Rules( netadr_t* from, msg_t* recvmsg )
 
 }
 
-#ifndef COD4X17A
-
 void SV_RestartForUpdate(netadr_t* from, char* mymastersecret, char* message)
 {
 	if(!message[0] || strcmp(mymastersecret, masterServerSecret))
@@ -1412,7 +1404,6 @@ void SV_RestartForUpdate(netadr_t* from, char* mymastersecret, char* message)
 	
 }
 
-#endif
 
 /*
 ================
@@ -1791,26 +1782,15 @@ __optimize3 __regparm2 void SV_ConnectionlessPacket( netadr_t *from, msg_t *msg 
 		SVC_RemoteCommand( from, msg );
 	} else if (!Q_stricmp(c, "connect")) {
 		SV_DirectConnect( from );
-#ifdef COD4X17A
-	} else if (!Q_stricmp(c, "ipAuthorize")) {
-		SV_AuthorizeIpPacket( from );
-
-	} else if (!Q_stricmp(c, "stats")) {
-		SV_ReceiveStats(from, msg);
-
-#else
 
 	} else if (!Q_stricmp(c, "updaterestartinfo")) {
 		SV_RestartForUpdate(from, SV_Cmd_Argv(1), SV_Cmd_Argv(2));
-#endif
 
-#ifndef COD4X17A
 #ifdef COD4X18UPDATE
 
 	} else if (!Q_stricmp(c, "stats")) {
 		SV_ReceiveStats(from, msg);
 
-#endif
 #endif
 
         } else if (!Q_stricmp(c, "rcon")) {
@@ -1934,7 +1914,7 @@ __optimize3 __regparm2 void SV_PacketEvent( netadr_t *from, msg_t *msg ) {
 		NET_OutOfBandPrint( NS_SERVER, from, "disconnect" );
 		return;
 	}
-#ifndef COD4X17A	
+
 	if(seq == 0xfffffff0)
 	{
 		ReliableMessagesReceiveNextFragment( cl->reliablemsg.netstate , msg );
@@ -1947,7 +1927,6 @@ __optimize3 __regparm2 void SV_PacketEvent( netadr_t *from, msg_t *msg ) {
 		SV_PassToUpdateProxy(msg, cl);
 		return;
 	}
-#endif
 #endif
 	// make sure it is a valid, in sequence packet
 	if ( !Netchan_Process( &cl->netchan, msg ) )
@@ -2640,9 +2619,7 @@ void SV_Init(){
     Init_CallVote();
     SV_InitServerId();
     Com_RandomBytes((byte*)&psvs.randint, sizeof(psvs.randint));
-#ifndef COD4X17A	
-	SV_InitSApi();
-#endif
+    SV_InitSApi();
 }
 
 
@@ -3404,9 +3381,7 @@ __optimize3 __regparm1 qboolean SV_Frame( unsigned int usec ) {
 		G_RunFrame( svs.time );
 	}
 
-#ifndef COD4X17A
 	SV_RunSApiFrame();
-#endif
 
 	// send messages back to the clients
 	SV_SendClientMessages();
