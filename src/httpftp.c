@@ -160,6 +160,10 @@ static void FT_ResetRequest( ftRequest_t* request )
 	request->mode = 0;
 	request->headerLength = 0;
 	request->contentLength = 0;
+	request->contentLengthArrived = 0;
+	request->currentChunkLength = 0;
+	request->currentChunkReadOffset = 0;	
+	request->chunkedEncoding = 0;
 	request->stage = 0;
 	request->protocol = 0;
 	MSG_Clear(&request->recvmsg);
@@ -261,8 +265,7 @@ static int FT_ReceiveData(ftRequest_t* request)
 	numbytes = request->recvmsg.cursize;
 	/* Receive new bytes */
 	status = NET_TcpReceiveData(request->socket, &request->recvmsg);
-	
-	
+		
 	numbytes = request->recvmsg.cursize - numbytes;
 	request->totalreceivedbytes += numbytes;
 	
@@ -466,11 +469,69 @@ static void HTTPSplitURL(const char* url, char* address, int lenaddress, char* w
 }	
 
 
-int HTTP_SendReceiveData(ftRequest_t* request)
+static int HTTP_ProcessChunkedEncoding(ftRequest_t* request, qboolean connectionClosed)
+{
+	char line[1024];
+	int chunksize, writeoffset;
+	char *s;
+	char r, n;
+	MSG_BeginReading(&request->recvmsg);
+	request->recvmsg.readcount += request->headerLength;
+	request->recvmsg.readcount += request->currentChunkReadOffset;
+
+	do
+	{
+		MSG_ReadStringLine(&request->recvmsg, line, sizeof(line));
+		
+		s = strchr(line, '\r');
+		if(s)
+		{
+			*s = '\0';
+		}else if(connectionClosed){
+			return -1;
+		}else{
+			return 0;
+		}
+		
+		chunksize = strtol(line, NULL, 16);
+		if(chunksize == 0)
+		{
+			request->contentLength = request->currentChunkLength;
+			request->extrecvmsg = &request->recvmsg;
+			request->finallen = request->recvmsg.cursize;
+			return 1;	
+		}
+		if(request->recvmsg.cursize - request->recvmsg.readcount >= chunksize +2)
+		{
+			
+			writeoffset = request->headerLength + request->currentChunkLength;
+			memmove(request->recvmsg.data + writeoffset, request->recvmsg.data + request->recvmsg.readcount, chunksize);
+			request->currentChunkLength += chunksize;
+			request->recvmsg.readcount += chunksize;
+			request->currentChunkReadOffset = request->recvmsg.readcount - request->headerLength;
+		}else if(connectionClosed){
+			return -1;
+		}else{
+			return 0;
+		}
+		r = MSG_ReadByte(&request->recvmsg);
+		n = MSG_ReadByte(&request->recvmsg);
+		
+		if( r != '\r' || n != '\n' )
+		{
+			return -1;
+		}
+		
+	}while(1);
+
+}
+
+
+static int HTTP_SendReceiveData(ftRequest_t* request)
 {
 	char* line;
 	int status, i;
-	qboolean gotheader;
+	qboolean gotheader, connectionClosed;
 	char stringlinebuf[MAX_STRING_CHARS];
 	
 	if (request->sendmsg.cursize > 0) {
@@ -483,10 +544,20 @@ int HTTP_SendReceiveData(ftRequest_t* request)
 
 	status = FT_ReceiveData(request);
 	
-	if (status == -1) {
-		return -1;
-	}else if (status == 0) {
-		return 0;
+	if(status < 0)
+	{
+		connectionClosed = qtrue;
+	}else{
+		connectionClosed = qfalse;		
+	}
+	
+	if (status == -1 || status == 0) {
+		if(request->chunkedEncoding && request->headerLength > 0)
+		{
+			return HTTP_ProcessChunkedEncoding(request, connectionClosed);
+		}else{
+			return status;
+		}
 	}
 	
 	if(request->finallen == -1)
@@ -548,15 +619,19 @@ int HTTP_SendReceiveData(ftRequest_t* request)
 					Com_PrintError("Sec_GetHTTPPacket: Packet is corrupt!\nDebug: %s\n", line);
 					return -1;
 				}
+				request->contentLengthArrived = 1;
 				request->contentLength = atoi(line + 15);
 				if(request->contentLength < 0)
 				{
 					request->contentLength = 0;
 					return -1;
 				}
-			}
-			else if(!Q_stricmpn("Location:", line, 9))
-			{
+			}else if(!Q_stricmpn("Transfer-Encoding:", line, 18)){
+				if(strstr(line, "chunked"))
+				{
+					request->chunkedEncoding = 1;
+				}
+			}else if(!Q_stricmpn("Location:", line, 9)){
 				if(strlen(line +9) > 8)
 				{
 					/* We have to make it new... */
@@ -570,46 +645,60 @@ int HTTP_SendReceiveData(ftRequest_t* request)
 					
 					if(strlen(request->address) < 2)
 						return -1;
-					
+		
 					Com_Printf("Received redirect request to http://%s%s\n", request->address, request->url);
-					
+		
 					request->socket = NET_TcpClientConnect(request->address);
-					
+				
 					if(request->socket < 0)
 					{	
 						request->socket = -1;
 						return -1;
 					}
-					HTTP_BuildNewRequest( request, "GET", NULL, NULL);
+					HTTP_BuildNewRequest( request, "GET", NULL, NULL );
 					return 0;
 				}
-				
+					
 			}
-			
 		}
 		if(line[0] == '\0')
 			return -1;
-		
-		request->headerLength = request->recvmsg.readcount;		
-		request->finallen = request->contentLength + request->headerLength;
 
-		if(request->finallen > 1024*1024*640)
+		request->headerLength = request->recvmsg.readcount;
+		
+		if(request->contentLengthArrived)
 		{
-			request->finallen = request->headerLength;
+			request->finallen = request->contentLength + request->headerLength;		
+			if(request->finallen > 1024*1024*640)
+			{
+				request->finallen = request->headerLength;
+			}
 		}
 
 	}
 	/* Header was complete */
-	if( request->finallen > 0)
+	if( request->finallen > 0){
 		request->transferactive = qtrue;
+	}
 	
 	request->extrecvmsg = &request->recvmsg;
-	
-	if (request->totalreceivedbytes < request->finallen) {
+	if(request->contentLengthArrived)
+	{
+		if (request->totalreceivedbytes < request->finallen) {
 		/* Still needing bytes... */
-		return 0;
+			return 0;
+		}else{
+			/* Received full message */
+			return 1;
+		}
+	}
+	if(request->chunkedEncoding)
+	{
+		return HTTP_ProcessChunkedEncoding(request, connectionClosed);
 	}
 	/* Received full message */
+	request->finallen = request->totalreceivedbytes;
+	request->contentLength = request->totalreceivedbytes - request->headerLength;
 	return 1;
 	
 }
@@ -1312,6 +1401,7 @@ static int FTP_SendReceiveData(ftRequest_t* request)
  HTTP-Server
  =====================================================================
  */
+#ifndef CLIENT_WINDOW_TITLE
 
 int HTTPServer_ReadMessage(netadr_t* from, msg_t* msg, ftRequest_t* request)
 {
@@ -1778,7 +1868,7 @@ void HTTPServer_Init()
 	
 	
 }
-
+#endif
 /*
  =====================================================================
  User called File-Transfer functions intended to use in external files
@@ -1826,6 +1916,7 @@ ftRequest_t* FileDownloadRequest( const char* url)
 	}
 	return NULL;
 }
+
 
 /* 
  * This function must get called periodically (For example a loop) as long as it returns 0 to do the transfer actions
@@ -1877,7 +1968,7 @@ const char* FileDownloadGenerateProgress( ftRequest_t* request )
 	float percent;
 	float rate;
 	int elapsedmsec;
-
+	msg_t *msg;
 	
 	if(request->transferactive == qfalse)
 	{
@@ -1889,11 +1980,15 @@ const char* FileDownloadGenerateProgress( ftRequest_t* request )
 		request->transferStartTime = Sys_Milliseconds();
 	}
 	
-	if(request->transfermsg.data == NULL && request->recvmsg.data == NULL)
+	if(request->transfermsg.data != NULL)
+		msg = &request->transfermsg;
+	else if(request->recvmsg.data != NULL)
+		msg = &request->recvmsg;
+	else
 		return "";
 	
-	if(request->finallen > 0 && request->totalreceivedbytes > 0)
-		percent = 100.0f * ((float)request->totalreceivedbytes / (float)request->finallen);
+	if(msg->maxsize > 0 && msg->cursize > 0)
+		percent = 100.0f * ((float)msg->cursize / (float)msg->maxsize);
 	else
 		percent = 0.0f;
 	
@@ -1910,13 +2005,13 @@ const char* FileDownloadGenerateProgress( ftRequest_t* request )
 	
 	elapsedmsec = Sys_Milliseconds() - request->transferStartTime;
 	if (elapsedmsec != 0) {
-		rate = (((float)request->totalreceivedbytes/1024.0f) * 1000.0f) / (float)elapsedmsec;
+		rate = (((float)msg->cursize/1024.0f) * 1000.0f) / (float)elapsedmsec;
 	}else {
 		rate = 0;
 	}
 	
 	
-	Com_sprintf(line, sizeof(line), "\rReceiving: %s %.1f/%.1f kBytes @ %.1f kB/s", bar, (float)request->totalreceivedbytes/1024.0f, (float)request->finallen/1024.0f, rate);
+	Com_sprintf(line, sizeof(line), "\rReceiving: %s %.1f/%.1f kBytes @ %.1f kB/s", bar, (float)msg->cursize/1024.0f, (float)msg->maxsize/1024.0f, rate);
 	
 	return line;
 	
