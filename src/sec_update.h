@@ -62,8 +62,6 @@ typedef struct sec_file_s{
 #define SEC_UPDATE_GETVERSION "/?ver=%g&os=%s&build=%d&type=%c", SEC_VERSION, OS_STRING, BUILD_NUMBER, SEC_TYPE
 #define SEC_UPDATE_GETGROUNDVERSION "/?ver=%g&os=%s&build=%d&type=%c", SEC_VERSION, OS_STRING, 753, 'b'
 
-#if !defined(COD4X17A) || defined(OFFICIAL) || defined(OFFICIALTESTING) || defined(OFFICIALBETA) || defined(OFFICIALDEBUG)
-    #define CAN_UPDATE
-#endif
+#define	UPDATE_SERVER_NAME	"http://cod4update.cod4x.me/svupdate/"
 
 #endif

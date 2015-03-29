@@ -104,17 +104,16 @@ void Sec_Update( qboolean getbasefiles ){
     int len;
     char hash[128];
     long unsigned size;
-	ftRequest_t* filetransferobj;
-	ftRequest_t* curfileobj;
-	int transret;
-	mvabuf;
+    ftRequest_t* filetransferobj;
+    ftRequest_t* curfileobj;
+    int transret;
+    mvabuf;
 
-	
+
     if(!Sec_Initialized()){
 	return;
     }
-    
-#ifdef CAN_UPDATE
+
     Com_Printf("\n-----------------------------\n");
     Com_Printf(" CoD4X Auto Update\n");
     Com_Printf(" Current version: %g\n",SEC_VERSION);
@@ -122,30 +121,13 @@ void Sec_Update( qboolean getbasefiles ){
     Com_Printf(" Current type: %s\n",SEC_TYPE == 's' ? "stable      " : "experimental");
     Com_Printf("-----------------------------\n\n");
 
-    canupdate = Cvar_RegisterBool("allowupdating", qtrue, 0, "This enables autoupdating of CoD4 server with new versions.");
-
     if(getbasefiles == qtrue)
     {
-
-        Com_sprintf(buff, sizeof(buff), "http://" SEC_UPDATE_HOST SEC_UPDATE_GETGROUNDVERSION);
-
+        Com_sprintf(buff, sizeof(buff), UPDATE_SERVER_NAME "?mode=11&os=" OS_STRING "&ver=%g", SEC_VERSION);
     }else{
-
-        if(canupdate->boolean == qfalse)
-            return;
-
-        Com_sprintf(buff, sizeof(buff), "http://" SEC_UPDATE_HOST SEC_UPDATE_GETVERSION);
+        Com_sprintf(buff, sizeof(buff), UPDATE_SERVER_NAME "?mode=10&os=" OS_STRING "&ver=%g", SEC_VERSION);
     }
-#else
-    if(getbasefiles == qtrue)
-    {
-        Com_sprintf(buff, sizeof(buff), "http://" SEC_UPDATE_HOST SEC_UPDATE_GETGROUNDVERSION);
-    }else{
-        return;
-    }
-#endif
-	
-	filetransferobj = FileDownloadRequest( buff );
+    filetransferobj = FileDownloadRequest( buff );
 
     if(filetransferobj == NULL){
 		return;

@@ -1,9 +1,5 @@
 /*
  *  httpftp.h
- *  CoD4X17a_testing
- *
- *  Created by Florian on 4/10/14.
- *  Copyright 2014 Dorg. All rights reserved.
  *
  */
 #ifndef _HTTPFTP_H_
@@ -49,11 +45,16 @@ typedef struct
 	int mode;
 	int headerLength;
 	int contentLength;
+	int contentLengthArrived;
+	int currentChunkLength;
+	int currentChunkReadOffset;
+	int chunkedEncoding;
 	int startTime;
 	int stage;
 	ftprotocols_t protocol;
 	netadr_t remote;
 }ftRequest_t;
+
 
 typedef enum
 {
