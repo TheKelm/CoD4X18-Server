@@ -2469,12 +2469,14 @@ void SV_ReceiveReliableMessages(client_t* client)
 			{
 				return;
 			}
-			Com_Printf("(1) msgcursize=%d, msgmaxsize=%d, messagesize=%d\n", msg->cursize, msg->maxsize, messagesize);
-		}else{
-			Com_Printf("(2) msgcursize=%d, msgmaxsize=%d, messagesize=%d\n", msg->cursize, msg->maxsize, messagesize);
 		}
 		/* Doing the important stuff here */
 		SV_ExecuteReliableMessage(client);
+		if(msg->cursize == 0)
+		{
+		    //Client got dropped in meantime
+		    return;
+		}
 		Com_Printf("^2Processed %d bytes\n", msg->cursize -4);
 		MSG_Clear(msg);
 	}
