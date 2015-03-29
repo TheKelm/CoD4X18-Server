@@ -167,19 +167,19 @@ void Sec_Update( qboolean getbasefiles ){
     }
 
     Com_Memset(&files, 0, sizeof(files));
+	
+	if(filetransferobj->contentLength >= sizeof(buff))
+	{
+		len = sizeof(buff) -1;
+	}else{
+		len = filetransferobj->contentLength;
+	}
+	
+	memcpy(buff, filetransferobj->recvmsg.data + filetransferobj->headerLength, len);
+	buff[len] = '\0';
 
     /* We need to parse filenames etc */
-    ptr = Sec_StrTok((char*)(filetransferobj->recvmsg.data + filetransferobj->headerLength),"\n",42); // Yes, 42.
-    if(ptr == NULL || Q_stricmpn("baseurl: ", ptr, 9))
-    {
-	    Com_PrintWarning("Sec_Update: Corrupt data from update server. Update aborted.\n");
-		FileDownloadFreeRequest(filetransferobj);
-		return;
-    }
-    Q_strncpyz(baseurl, ptr +9, sizeof(baseurl));
-
-    ptr = Sec_StrTok(NULL,"\n",42); // Yes, 42 again.
-
+    ptr = Sec_StrTok(buff,"\n",42); // Yes, 42.
 	while(ptr != NULL){
 		
 		currFile->next = Sec_GMalloc(sec_file_t,1);
