@@ -821,7 +821,7 @@ static ftRequest_t* FTP_DLRequest(const char* url)
 	if(user[0] == '\0' && passwd[0] == '\0')
 	{
 		Q_strncpyz(request->username, "anonymous", sizeof(request->username));
-		Q_strncpyz(request->password, "cod4x@iceops.in", sizeof(request->password));
+		Q_strncpyz(request->password, "cod4x@cod4x.me", sizeof(request->password));
 	}else{
 		Q_strncpyz(request->username, user, sizeof(request->username));
 		Q_strncpyz(request->password, passwd, sizeof(request->password));	
@@ -2069,8 +2069,6 @@ void DL_Test_CB(const char* filename, qboolean success, ftRequest_t *handle)
 void DL_File(char* url)
 {
 	ftRequest_t* handle;
-	//handle = DownloadFile( "http://iceops.in/demos/hardcore_tdm/demo_215216_0000.dm_1" );
-	//handle = DownloadFile("ftp://ftp.idsoftware.com/idstuff/teamarena/q3ta_trailer.mpg");
 	
 	handle = DownloadFile(url);
 	if(handle != NULL)

@@ -69,7 +69,7 @@ qboolean Sec_WriteCertificateToFile(sec_certificate_t *certificate, char *filena
     if(fp == NULL){
 	return qfalse;
     }
-    fputs("IceOps Signature File. Visit us at www.iceops.in!",fp);
+    fputs("Signature File. Visit us at www.cod4x.me!",fp);
     fputc(0,fp);
     cert = certificate;
     do{    

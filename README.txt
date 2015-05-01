@@ -8,7 +8,7 @@ If you find any bugs, please create an issue here on github.
 
 COPYRIGHT
 =========
-CoD4X is copyrighted by Ninja and TheKelm of IceOps
+CoD4X is copyrighted by Ninja and TheKelm
 Large portions of CoD4X are copyrighted by "Id Software, Inc."
 Several portions are part of the "ioQuake-3 project".
 unzip is copyrighted by Gilles Vollant, Jean-loup Gailly and Mark Adler
@@ -21,7 +21,7 @@ LICENSE
 
 CoD4X is released under GNU Affero General Public License, see copying.txt
 
-IceOps Plugin Handler is released under GNU Affero General Public License, see copying.txt (if you want to request another license on Plugin Handler API for your plugin, contact us)
+Plugin Handler is released under GNU Affero General Public License, see copying.txt (if you want to request another license on Plugin Handler API for your plugin, contact us)
 
 Other:
 
@@ -61,8 +61,4 @@ zlib is Copyright (C) 1995-1998 Jean-loup Gailly and Mark Adler
 CONTACT
 =======
 
-Ninja, ninja(?@?)iceops.in
-
-TheKelm, thekelm(?@?)iceops.in
-
-https://iceops.in
+https://cod4x.me

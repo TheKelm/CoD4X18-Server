@@ -2394,53 +2394,7 @@ void	serverStatus_Write(){
 
 }
 
-/*
-void SV_ValidateServerId()
-{
-    int res;
 
-    Com_Printf("Resolving cod4master.iceops.in\n");
-
-    res = NET_StringToAdr("cod4master.iceops.in", &psvs.masterServer_adr, NA_IP);
-    if(res == 2)
-    {
-        psvs.masterServer_adr.port = BigShort(PORT_MASTER);
-    }
-    psvs.masterServer_adr.sock = 0;
-
-    if(res)
-    {
-        Com_Printf("cod4master.iceops.in resolved to %s\n", NET_AdrToString(&psvs.masterServer_adr));
-        NET_OutOfBandPrint(NS_SERVER, &psvs.masterServer_adr, "serverValidate CoD4 %d %s", psvs.masterServer_id, psvs.masterServer_challengepassword);
-    }
-    else
-        Com_Printf("cod4master.iceops.in has no IPv4 address.\n");
-
-}
-
-void SV_ValidationResponse(netadr_t *from, msg_t* msg)
-{
-    int res;
-
-    Com_Printf("Resolving cod4master.iceops.in\n");
-
-    res = NET_StringToAdr("cod4master.iceops.in", &psvs.masterServer_adr, NA_IP);
-    if(res == 2)
-    {
-        psvs.masterServer_adr.port = BigShort(PORT_MASTER);
-    }
-    psvs.masterServer_adr.sock = 0;
-
-    if(res)
-    {
-        Com_Printf("cod4master.iceops.in resolved to %s\n", NET_AdrToString(&psvs.masterServer_adr));
-        NET_OutOfBandPrint(NS_SERVER, &psvs.masterServer_adr, "serverValidate CoD4 %d %s", psvs.masterServer_id, psvs.masterServer_challengepassword);
-    }
-    else
-        Com_Printf("cod4master.iceops.in has no IPv4 address.\n");
-
-}
-*/
 void SV_InitServerId(){
 	int i;
 	byte masterServerSecretBin[(MASTERSERVERSECRETLENGTH -1) / 2];

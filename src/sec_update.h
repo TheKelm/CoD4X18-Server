@@ -47,7 +47,6 @@ typedef struct sec_file_s{
 
 
 //#undef QUOTE
-#define SEC_UPDATE_HOST "update.iceops.in"
 #define SEC_UPDATE_PHP(B,T) "/?ver=" SEC_VERSION "&build=" B "&type=" T
 #define SEC_UPDATE_USER_AGENT "CoD4X AutoUpdater V. " SEC_UPDATE_VERSION
 //#define SEC_UPDATE_BOUNDARY "------------------------------------874ryg7v"
