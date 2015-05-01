@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -20,6 +20,6 @@
 */
 
 #include "plugin_handler.h"
-#include "../lib_tomcrypt/main.h"
+#include "sec_crypto.h"
 
 qboolean PHandler_Hash(pluginHash_t algo, void *in, size_t inSize, void *out, size_t outSize);

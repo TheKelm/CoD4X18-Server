@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -20,7 +20,6 @@
 */
 
 
-#include <stdlib.h>
 
 //#define Sec_Malloc(x) malloc(x)
 
@@ -30,3 +29,9 @@ void *Sec_Malloc(size_t size);
 #define Sec_SMalloc(n) Sec_GMalloc(char,n)
 
 #define Sec_Free(x) if(x!=NULL) free(x); x=NULL
+
+extern int SecCryptErr;
+char *Sec_CryptErrStr(int);
+
+void Sec_Init( void );
+qboolean Sec_Initialized();

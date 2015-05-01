@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -33,7 +33,7 @@
 #include "g_sv_shared.h"
 #include "cvar.h"
 #include "misc.h"
-#include "sha256.h"
+#include "sec_crypto.h"
 #include "sv_auth.h"
 
 #include <string.h>
@@ -96,11 +96,8 @@ Sets the players Uid.
 Usage: int = self setUid(uid <integer>);
 ============
 */
-#ifdef COD4X17A
-	#define SCRIPT_UID_OFFSET 100000000
-#else
-	#define SCRIPT_UID_OFFSET 1000000000
-#endif
+#define SCRIPT_UID_OFFSET 1000000000
+
 void PlayerCmd_SetUid(scr_entref_t arg){
 
     gentity_t* gentity;
@@ -1238,7 +1235,9 @@ Usage: string = sha256(string <input>);
 */
 
 void GScr_SHA256(){
-    const char *hash;
+
+    char hash[129];
+    unsigned long size;
 
     if(Scr_GetNumParam() != 1){
         Scr_Error("Usage: sha256(<input text>)\n");
@@ -1246,9 +1245,14 @@ void GScr_SHA256(){
 
     char* input = Scr_GetString(0);
 
-    hash = Com_SHA256(input);
+    size = sizeof(hash);
 
+    if(!Sec_HashMemory(SEC_HASH_SHA256, input, strlen(input), hash, &size, qfalse))
+    {
+        hash[0] = '\0';
+    }
     Scr_AddString(hash);
+
 }
 
 
@@ -2150,7 +2154,7 @@ void  GScr_GetCvar()
             ptr_names++;
             ptr_sums++;
 
-            if(!Q_stricmpn(ptr_names, "xiceops_", 8))
+            if(!Q_stricmpn(ptr_names, "xbase_", 8))
             {
                 len = Q_strichr(ptr_names, ' ');
                 if(len == -1)
@@ -2430,3 +2434,4 @@ void ScrCmd_SetStance(scr_entref_t arg){
 
 }
 */
+

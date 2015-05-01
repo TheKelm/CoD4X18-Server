@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -490,7 +490,7 @@ __cdecl void SV_SendMessageToClient( msg_t *msg, client_t *client ) {
 			client->nextSnapshotTime = svs.time + 1000;
 		}
 	}
-#ifdef COD4X17A
+#ifdef SV_SEND_HUFFMAN
 	sv.bpsTotalBytes += len;
 #else
 	sv.bpsTotalBytes += msg->cursize;

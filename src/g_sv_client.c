@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -338,6 +338,7 @@ __cdecl void ClientUserinfoChanged( int clientNum ) {
 
 	gentity_t *ent;
 	char    *s;
+	char name[64];
 
 	gclient_t   *client;
 	char userinfo[MAX_INFO_STRING];
@@ -369,10 +370,29 @@ __cdecl void ClientUserinfoChanged( int clientNum ) {
 	} else {
 		client->pers.predictItemPickup = qtrue;
 	}
+	SV_GetUsername(clientNum, name, sizeof(name));
+	ClientSetUsername(clientNum, name);
+
+}
+
+void ClientSetUsername(int clientNum, const char* username)
+{
+
+	gentity_t *ent;
+	gclient_t   *client;
+
+	ent = g_entities + clientNum;
+	client = ent->client;
+
+	client->ps.clientNum = clientNum;
+
+
 
 	// set name
-	s = Info_ValueForKey( userinfo, "name" );
+	char s[64];
 
+
+	Q_strncpyz(s, username, sizeof(s));
 	
 	if(client->sess.sessionTeam == TEAM_RED || client->sess.sessionTeam == TEAM_BLUE)
 		ClientCleanName( s, client->pers.netname, sizeof( client->pers.netname ) , qfalse);
@@ -380,13 +400,12 @@ __cdecl void ClientUserinfoChanged( int clientNum ) {
 		ClientCleanName( s, client->pers.netname, sizeof( client->pers.netname ) , qtrue);
 
 	Q_strncpyz(client->sess.netname, client->pers.netname, sizeof( client->sess.netname ));
-
-/*	[840cccc] = clientNum;
+/*
+	[840cccc] = clientNum;
 	[840ccd0] = name;
 	[840cce0] = sess.team;
-*/
 
-/*	if ( client->pers.connected == CON_CONNECTED ) {
+	if ( client->pers.connected == CON_CONNECTED ) {
 		if ( strcmp( oldname, client->pers.netname ) ) {
 			trap_SendServerCommand( -1, va( "print \"[lof]%s" S_COLOR_WHITE " [lon]renamed to[lof] %s\n\"", oldname,
 											client->pers.netname ) );
@@ -394,7 +413,6 @@ __cdecl void ClientUserinfoChanged( int clientNum ) {
 	}
 */
 }
-
 
 /*
 ===========

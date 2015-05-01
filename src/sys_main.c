@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -34,7 +34,7 @@
 #include "sys_thread.h"
 #include "punkbuster.h"
 #include "server.h"
-#include "sec_main.h"
+#include "sec_crypto.h"
 #include "cmd.h"
 #include <libgen.h>
 #include <signal.h>

@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -20,9 +20,8 @@
 */
 #ifndef SEC_UPDATE_H
 #define SEC_UPDATE_H
-#include "sec_init.h"
+
 #include "q_platform.h"
-#include "version.h"
 
 
 void Sec_Update( qboolean getbasefiles );
@@ -32,7 +31,8 @@ typedef struct sec_file_s{
     char name[MAX_OSPATH];
     char path[MAX_OSPATH];
     int size;
-    char hash[65];
+    char hash[4096];
+    qboolean alreadyInstalled;
     struct sec_file_s *next;
 }sec_file_t;
 
@@ -43,11 +43,7 @@ typedef struct sec_file_s{
 
 #define SEC_TYPE 'e'
 
-#ifdef COD4X17A
-    #define SEC_VERSION 1.7
-#else
-    #define SEC_VERSION 1.8
-#endif
+#define SEC_VERSION 1.8
 
 
 //#undef QUOTE

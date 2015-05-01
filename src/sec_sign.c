@@ -1,4 +1,9 @@
+
+#include "qcommon.h"
 #include "sec_sign.h"
+#include "sec_crypto.h"
+#include "tomcrypt/math/tommath.h"
+
 
 qboolean Sec_MakeRsaKey(int size,const rsa_key *key){
     int res = rsa_make_key(NULL,0,size,65537,(rsa_key *)key);
@@ -11,6 +16,7 @@ qboolean Sec_SignHash(const char *in, size_t inSize, rsa_key *key, char *out, si
     *outSize = os;
     return res;
 }
+
 qboolean Sec_VerifyHash(const char *sig, size_t sigSize, const rsa_key *key, const char *hash, int hashSize){
     int n = 0;
     int res = rsa_verify_hash_ex((const unsigned char *)sig,sigSize,(const unsigned char *)hash,hashSize,LTC_LTC_PKCS_1_V1_5,0,16,&n,(rsa_key *)key);
@@ -101,4 +107,95 @@ qboolean Sec_WriteCertificateToFile(sec_certificate_t *certificate, char *filena
 qboolean Sec_ReadCertificateFromFile(sec_certificate_t *cert, char *filename){
     
     return qtrue;
+}
+
+int Sec_Pem2Der(char* pemcert, int pemlen, unsigned char* dercert, unsigned int *derlen){
+	char* pos;
+	unsigned char assemblybuf[32768];
+	int i;
+
+	pos = strstr(pemcert, "--\n");
+	if(pos == NULL){
+		pos = strstr(pemcert, "--\r\n");
+	}
+	if(pos == NULL){
+		return CRYPT_INVALID_PACKET;
+	}
+	while(*pos != '\n'){
+		++pos;
+	}
+	i = 0;
+	while(*pos){
+		if(*pos == '-'){
+			break;
+		}
+		if(*pos > ' ' && *pos <= 'z'){
+			assemblybuf[i] = *pos;
+			++i;
+		}
+		++pos;
+	}
+
+	return base64_decode(assemblybuf, i, dercert, (long unsigned int*)derlen);
+}
+
+qboolean Sec_VerifyMemory(const char* expectedb64hash, void* memory, int lenmem)
+{
+	unsigned char dercert[16384];
+	unsigned int dercertlen;
+	byte cleartext[16384];
+	byte ciphertext[0x20000];
+	unsigned long cleartextlen, ciphertextlen;
+	int decryptstat;
+	int sta;
+	char hash[1025];
+	long unsigned int sizeofhash;
+	rsa_key rsakey;
+
+	dercertlen = sizeof(dercert);
+
+	if(Sec_Pem2Der(cod4xpem, strlen(cod4xpem), dercert, &dercertlen) != CRYPT_OK){
+		Com_PrintError("Pem to Der conversion failed\n");
+		return qfalse;
+	}
+	ciphertextlen = sizeof(ciphertext);
+
+
+	if(base64_decode((byte*)expectedb64hash, strlen((char*)expectedb64hash), ciphertext, (long unsigned int*)&ciphertextlen) != CRYPT_OK)
+	{
+		Com_DPrintf("Not a valid base64 text\n");
+		return qfalse;
+	}
+
+	if((sta = rsa_import(dercert, dercertlen, &rsakey)) != CRYPT_OK){
+		Com_PrintError("rsa_import failed with error code %d:%s\n", sta, Sec_CryptErrStr(sta));
+		return qfalse;
+	}
+
+	cleartextlen = sizeof(cleartext) -1;
+
+	sta = rsa_decrypt_puplickey_nnj(ciphertext, ciphertextlen, cleartext, &cleartextlen, &decryptstat, &rsakey);
+	
+	rsa_free(&rsakey);
+	
+	if(sta != CRYPT_OK || cleartextlen < 0 || cleartextlen > sizeof(cleartext) -1){
+		Com_PrintError("rsa_decrypt_puplickey_nnj failed with error code %d:%s\n", sta, Sec_CryptErrStr(sta));
+		return qfalse;
+	}
+
+	cleartext[cleartextlen] = '\0';
+	
+	sizeofhash = sizeof(hash);
+	
+	if(!Sec_HashMemory(SEC_HASH_SHA256, memory, lenmem, hash, &sizeofhash, qfalse)){
+		Com_PrintError("Hashing has failed with errorcode %s\n", Sec_CryptErrStr(SecCryptErr));
+		return qfalse;
+	}
+
+	if(Q_stricmp(hash, (char*)cleartext) != 0)
+	{
+		return qfalse;
+	}
+	return qtrue;
+	
 }

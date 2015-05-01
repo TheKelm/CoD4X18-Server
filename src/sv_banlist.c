@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -448,6 +448,8 @@ char* SV_PlayerIsBanned(int uid, char* pbguid, netadr_t *addr, char* message, in
     Com_sprintf(appealmsg, sizeof(appealmsg), "You can appeal this ban online at: %s", sv_banappealurl->string);
   }
 
+#if 0
+/* This will come back at a later time */
   if(uid > 0){
     for(i = 0 ; i < current_banindex; this++, i++){
 
@@ -483,7 +485,9 @@ char* SV_PlayerIsBanned(int uid, char* pbguid, netadr_t *addr, char* message, in
         }
     }
 
-  }else if(pbguid != NULL && strlen(pbguid) == 32){
+  }else 
+#endif
+	if(pbguid != NULL && strlen(pbguid) == 32){
 
 
     for(i = 0 ; i < current_banindex; this++, i++){
@@ -583,10 +587,13 @@ qboolean SV_AddBan(int uid, int auid, char* guid, char* name, time_t expire, cha
         return qfalse;
 
     int type;
-
+#if 0
+    /* Same as above - later */
     if(uid > 0){
         type = 0;
-    }else if(guid && strlen(guid) == 8){
+    }else 
+#endif
+if(guid && strlen(guid) == 8){
         type = 1;
     }else{
         return qfalse;

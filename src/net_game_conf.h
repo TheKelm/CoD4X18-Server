@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -46,7 +46,11 @@
 #define	PORT_SERVER		28960
 
 #define	PROTOCOL_VERSION	9
-#define COD4X_SUBVERSION	"9.3"
+
+#define _STRINGIFY(s) #s
+#define STRINGIFY(s) _STRINGIFY(s)
+#define COD4X_SUBVERSION	STRINGIFY(SYS_COMMONVERSION)
+
 #define	LEGACY_PROTOCOL_VERSION	6
 
 #define MAX_MSGLEN 0x20000

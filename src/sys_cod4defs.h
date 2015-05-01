@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -25,7 +25,7 @@
 #define __SYS_COD4DEFS_H__
 
 
-#define EXECUTABLE_NAME "cod4x17a_dedrun"
+#define EXECUTABLE_NAME "cod4x18_dedrun"
 
 #define PRODUCT_NAME				"Call of Duty 4 - Modern Warfare Dedicated Server"
 #define BASEGAME					"main"
@@ -34,17 +34,13 @@
 
 #define PORT_MASTER 20810
 #define MASTER_SERVER_NAME "cod4master.activision.com"
-#define MASTER_SERVER_NAME2 "cod4master.iceops.in"
+#define MASTER_SERVER_NAME2 "cod4master.cod4x.me"
 #define HEARTBEAT_GAME "COD-4"
 #define HEARTBEAT_DEAD "flatline"
 
 #define PRODUCT_VERSION "1.0"
 
-#ifdef COD4X17A
-    #define Q3_VERSION "1.7a"
-#else
-    #define Q3_VERSION "1.8"
-#endif
+#define Q3_VERSION "1.8"
 
 #define GAME_STRING "CoD4 X"
 

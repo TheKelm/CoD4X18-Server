@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -18,9 +18,15 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>
 ===========================================================================
 */
+#include "q_shared.h"
+#include "qcommon.h"
 
-#include "sec_init.h"
-#include "sec_main.h"
+#define LTM_DESC
+
+#include "sec_common.h"
+#include "sec_crypto.h"
+#include "tomcrypt/tomcrypt.h"
+
 
 qboolean initialized = qfalse;
 
@@ -32,7 +38,7 @@ void Sec_Init(void)
 {
     int result,i;
     // Connect the math library with the crypt library
-    //ltc_mp = ltm_desc;
+	ltc_mp = ltm_desc;
     //Cmd_AddCommand("createCert", Sec_MakeCert_f);
     sec_hashes[SEC_HASH_SHA1].name="SHA1";
     sec_hashes[SEC_HASH_SHA1].ID=SEC_HASH_SHA1;

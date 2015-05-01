@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -241,5 +241,8 @@ void FS_AddIwdPureCheckReference(searchpath_t *search);
 void FS_StripTrailingSeperator( char *path );
 int FS_CalculateChecksumForFile(const char* filename, int *crc32);
 int FS_WriteChecksumInfo(const char* filename, byte* data, int maxsize);
+int FS_WriteFileOSPath( char *ospath, const void *buffer, int size );
+
 #endif
+
 

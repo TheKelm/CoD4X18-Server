@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -27,6 +27,7 @@
 #include "qcommon_io.h"
 #include "cvar.h"
 #include "misc.h"
+#include "sys_main.h"
 
 #include <stdarg.h>
 
@@ -1322,16 +1323,31 @@ void RuntimeError(char *a3, int arg4, char *message, char *a4)
 }
 
 
+qboolean Scr_ScriptRuntimecheckInfiniteLoop()
+{
+    int now = Sys_Milliseconds();
+    int aftercontroltest;
+    int i;
+    int h;
 
+    if(now - g_threadStartingTime > 6000)
+    {
+        h = 0x0f0f0f0f;
 
+        for(i = 0x20000000; i > 0; --i)
+        {
+            h = h ^ (i + h) ^ (20+i) ^ (5 + h) ^ i;
+        }
+        aftercontroltest = Sys_Milliseconds();
 
+        if(aftercontroltest - now < 6000)
+        {   //CPU has enough cycles - this is a script error
+            return qtrue;
+        }
+        //CPU is just busy
+    }
 
+    return qfalse;
 
-
-
-
-
-
-
-
+}
 

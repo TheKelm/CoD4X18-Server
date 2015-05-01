@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -72,6 +72,8 @@ void* __cdecl yy_create_buffer(FILE *file, int bufferSize);
 void Com_StdErrorStub(int e, const char* fmt, ...);
 void __regparm3 VM_Notify_Hook(int, int, void*);
 unsigned int PushGroundEnt();
+qboolean Scr_ScriptRuntimecheckInfiniteLoop();
+
 static void __cdecl Cbuf_AddText_Wrapper_IW(int dummy, const char *text )
 {
     Cbuf_AddText( text );
@@ -204,6 +206,14 @@ static byte patchblock_NET_OOB_CALL4[] = { 0x9B, 0x53, 0x17, 0x8,
 };
 
 
+static byte patchblock_scriptruntime[] = { 0xe4, 0x29, 0x16, 0x8,
+	0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x85, 0xc0, 0x0f, 0x85
+};
+
+	Sys_PatchImageWithBlock(patchblock_scriptruntime, sizeof(patchblock_scriptruntime));
+	SetCall(0x81629df, Scr_ScriptRuntimecheckInfiniteLoop);
+
+
 	Sys_PatchImageWithBlock(patchblock_01, sizeof(patchblock_01));
 
 	Sys_PatchImageWithBlock(patchblock_Pmove_GetSpeed, sizeof(patchblock_Pmove_GetSpeed));
@@ -219,6 +229,7 @@ static byte patchblock_NET_OOB_CALL4[] = { 0x9B, 0x53, 0x17, 0x8,
 	Com_Memset((void*)0x81753ea, 0x90, 5); //In SV_SpawnServer()  Removing the call of NET_Sleep() I don't know for what this can be usefull to have here O_o
 	Com_Memset((void*)0x8174db5, 0x90, 42); //In SV_SpawnServer()  Don't set cvar cl_paused as well as nextmap
 	Com_Memset((void*)0x8174b9b, 0x90, 116); //In SV_SpawnServer()  Removal of sv_maxclients amd ui_maxclients Cvar_Register()
+	Com_Memset((void*)0x8174e39, 0x90, 0x8174e71 - 0x8174e39); //SV_SpawnServer() ServerId generation - we use our own
 	Com_Memset((void*)0x8204acf, 0x90, 16); //In ???() Skip useless check for cvar: sv_dedicated
 	Com_Memset((void*)0x8204ce9, 0x90, 16); //In ???() Skip useless check for cvar: sv_dedicated
         Com_Memset((void*)0x8175055, 0x90, 101);
@@ -388,6 +399,7 @@ static byte patchblock_DB_LOADXASSETS[] = { 0x8a, 0x64, 0x20, 0x8,
 	*(byte*)0x8176a31 = 0x51;
 
 //	SetCall(0x805b387, PushGroundEnt);
+	SetCall(0x8174e39, SV_GenerateServerId);
 }
 
 
@@ -515,4 +527,3 @@ qboolean Sys_LoadImage( ){
 
     return qtrue;
 }
-

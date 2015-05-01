@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -25,9 +25,8 @@
 
 
 #include "q_shared.h"
-
-#include <tomcrypt.h>
-#include <tommath.h>
+#include "sec_common.h"
+#include "tomcrypt/tomcrypt.h"
 
 #include <time.h>
 #include <stdio.h>
@@ -58,5 +57,6 @@ qboolean Sec_MakeCertificate(rsa_key *key, const char *commonName, const char *c
 void Sec_ClearCertificate(sec_certificate_t *cert);
 qboolean Sec_WriteCertificateToFile(sec_certificate_t *certificate, char *filename);
 qboolean Sec_ReadCertificateFromFile(sec_certificate_t *cert, char *filename);
-
+int rsa_decrypt_puplickey_nnj(const unsigned char *in,unsigned long inlen,unsigned char *out,unsigned long *outlen,int *stat, rsa_key *key);
+qboolean Sec_VerifyMemory(const char* expectedb64hash, void* memory, int lenmem);
 #endif

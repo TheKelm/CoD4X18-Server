@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -495,10 +495,13 @@ void SpawnVehicle(gentity_t* ent, const char* vehtype);
 void __cdecl G_VehSpawner(gentity_t *ent);
 void __cdecl G_VehCollmapSpawner(gentity_t *ent);
 void __cdecl G_SetModel(gentity_t *ent, const char* modelname);
+void ClientSetUsername(int clientNum, const char* username);
 //This defines Cvars directly related to executable file
 #define getcvaradr(adr) ((cvar_t*)(*(int*)(adr)))
 
 #define g_maxclients getcvaradr(0x84bcfe8)
 
 #endif /*G_SHARED_H*/
+
+
 

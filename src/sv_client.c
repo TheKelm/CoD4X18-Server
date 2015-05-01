@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -167,6 +167,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 		NET_OutOfBandPrint( NS_SERVER, from, "error\nBad subversion. Server expects subversion %s but client is %s\n", COD4X_SUBVERSION, xversion );
 		return;		
 	}
+
 #endif
 
 	newcl = NULL;
@@ -225,7 +226,9 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 			Com_Printf("Have to fix up old client which reports version %d\n", version);
 		}else{
 #endif
-			NET_OutOfBandPrint( NS_SERVER, from, "error\nThis server requires protocol version: %d\nPlease restart CoD4 and see on the main-menu if a new update is available\n", sv_protocol->integer);
+			NET_OutOfBandPrint( NS_SERVER, from, "error\nThis server requires protocol version: %d\n"
+							    "Please restart CoD4 and see on the main-menu if a new update is available\n"
+							    "{OOBErrorParser protocolmismatch CoD4X" Q3_VERSION " %d}", sv_protocol->integer, sv_protocol->integer);
 			Com_Printf("rejected connect from version %i\n", version);
 			return;
 #ifdef COD4X18UPDATE
@@ -441,7 +444,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	if(SV_SetupReliableMessageProtocol(newcl) == qfalse)
 	{
 		NET_OutOfBandPrint( NS_SERVER, from, "error\nServer is out of memory\n");
-		Com_Printf("Server is out of memory. Refused to accept client %s\n", newcl->name);
+		Com_Printf("Server is out of memory. Refused to accept client %s\n", nick);
 		SV_FreeClientScriptId(newcl);
 		return;
 	}
@@ -593,7 +596,7 @@ void SV_UserinfoChanged( client_t *cl ) {
 	int	i;
 	int	len;
 
-
+/*
 	if(cl->state == CS_CONNECTED)
 	{
 
@@ -609,9 +612,11 @@ void SV_UserinfoChanged( client_t *cl ) {
 		Q_strncpyz(cl->shortname, cl->name, sizeof(cl->shortname));
 	
 	}else{
-		Info_SetValueForKey( cl->userinfo, "name", cl->name);
+*/
+	Q_strncpyz(cl->shortname, cl->name, sizeof(cl->shortname));
+/*
 	}
-
+*/
 	// rate command
 	// if the client is on the same subnet as the server and we aren't running an
 	// internet public server, assume they don't need a rate choke
@@ -681,6 +686,16 @@ void SV_UserinfoChanged( client_t *cl ) {
 
 }
 
+
+void SV_GetUsername(int clientNum, char* name, int maxlen)
+{
+    if(clientNum < 0 || clientNum >= sv_maxclients->integer)
+    {
+        name[0] = '\0';
+    }else{
+        Q_strncpyz(name, svs.clients[clientNum].name, maxlen);
+    }
+}
 
 /*
 ==================
@@ -833,7 +848,6 @@ __optimize3 __regparm3 void SV_UserMove( client_t *cl, msg_t *msg, qboolean delt
 	usercmd_t   *cmd, *oldcmd;
 	playerState_t *ps;
 //	extclient_t *extcl;
-
 
 	if ( delta ) {
 		cl->deltaMessage = cl->messageAcknowledge;
@@ -1318,7 +1332,7 @@ void SV_WWWRedirect(client_t *cl, msg_t *msg){
     }
 
     cl->download = 0;
-    *cl->downloadName = 0;
+    //*cl->downloadName = 0;
 }
 
 
@@ -1612,7 +1626,6 @@ __optimize3 __regparm2 void SV_ExecuteClientMessage( client_t *cl, msg_t *msg ) 
 	int serverId;
 	static const char *clc_strings[256] = { "clc_move", "clc_moveNoDelta", "clc_clientCommand", "clc_EOF", "clc_nop", "clc_sApiData"};
 
-
 	msg_t decompressMsg;
 	byte buffer[NETCHAN_FRAGMENTBUFFER_SIZE +1];
 
@@ -1624,7 +1637,7 @@ __optimize3 __regparm2 void SV_ExecuteClientMessage( client_t *cl, msg_t *msg ) 
 		SV_DropClient(cl, "SV_ExecuteClientMessage: Client sent oversize message");
 		return;
 	}
-	
+
 	clnum = cl - svs.clients;
 	
 	if ( sv_shownet->integer == clnum ) {
@@ -1633,7 +1646,7 @@ __optimize3 __regparm2 void SV_ExecuteClientMessage( client_t *cl, msg_t *msg ) 
 	
 	serverId = cl->serverId;
 
-	if ( serverId != sv_serverId && !cl->wwwDl_var01 && !cl->wwwDownloadStarted && !cl->wwwDlAck )
+	if ( serverId != sv.serverId && !cl->wwwDl_var01 && !cl->wwwDownloadStarted && !cl->wwwDlAck )
 	{
 		if(cl->gamestateSent)
 		{
@@ -2309,7 +2322,7 @@ void SV_SendClientVoiceData(client_t *client)
     SV_WriteClientVoiceData(&msg, client);
     if ( msg.overflowed )
     {
-		Com_PrintWarning( "WARNING: voice msg overflowed for %s\n", client->shortname);
+		Com_PrintWarning( "WARNING: voice msg overflowed for %s\n", client->name);
 		return;
     }
     NET_OutOfBandData(NS_SERVER, &client->netchan.remoteAddress, msg.data, msg.cursize);
@@ -2318,11 +2331,11 @@ void SV_SendClientVoiceData(client_t *client)
 
 void SV_GetVoicePacket(netadr_t *from, msg_t *msg)
 {
-	unsigned int qport;
+	unsigned short qport;
 
 	client_t *cl;
 	
-	qport = MSG_ReadShort(msg);
+	qport = (unsigned short)MSG_ReadShort(msg);
 
 	cl = SV_ReadPackets(from, qport);
 	
@@ -2337,7 +2350,7 @@ void SV_GetVoicePacket(netadr_t *from, msg_t *msg)
 	}
 }
 
-client_t* SV_ReadPackets(netadr_t *from, unsigned int qport)
+client_t* SV_ReadPackets(netadr_t *from, unsigned short qport)
 {
 	int i;
 	client_t *cl;

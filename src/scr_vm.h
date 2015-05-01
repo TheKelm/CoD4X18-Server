@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -31,6 +31,9 @@
 #define scrVarPub (*((scrVarPub_t*)( 0x8be4e80 )))
 #define scrVmPub (*((scrVmPub_t*)( 0x8c06320 )))
 #define g_script_error_level *(int*)(0x8c0631c)
+#define g_threadStartingTime *(int*)(0x8c0a678)
+
+
 
 #include "q_shared.h"
 #include "q_math.h"
@@ -505,4 +508,3 @@ void GScr_AddScriptCommand();
 void RuntimeError(char *a3, int arg4, char *message, char *a4);
 
 #endif
-

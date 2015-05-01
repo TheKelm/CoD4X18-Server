@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -828,7 +828,6 @@ ignores zip-files
 void FS_SV_Rename( const char *from, const char *to ) {
 	char	from_ospath[MAX_OSPATH];
 	char	to_ospath[MAX_OSPATH];
-	FILE *f;
 	mvabuf;
 
 	FS_BuildOSPathForThread( fs_homepath->string, from, "", from_ospath, 0);
@@ -836,16 +835,21 @@ void FS_SV_Rename( const char *from, const char *to ) {
 	FS_StripTrailingSeperator( to_ospath );
 	FS_StripTrailingSeperator( from_ospath );
 
-	f = fopen( from_ospath, "rb" );
-	if (f) {
-		fclose( f );
+	if(FS_FileExistsOSPath( from_ospath ))
+	{
 		if ( fs_debug->integer ) {
 			Sys_Print(va("^4FS_Rename: %s --> %s\n", from_ospath, to_ospath ));
 		}
 		if (rename( from_ospath, to_ospath )) {
 			// Failed, try copying it and deleting the original
-			FS_CopyFile ( from_ospath, to_ospath );
-			FS_RemoveOSPath ( from_ospath );
+			FS_RemoveOSPath( to_ospath );
+			if(FS_FileExistsOSPath( to_ospath ) == qfalse)
+			{
+				FS_CopyFile ( from_ospath, to_ospath );
+				if(FS_FileExistsOSPath( to_ospath ) == qtrue){
+					FS_RemoveOSPath ( from_ospath );
+				}
+			}
 		}
 	}
 
@@ -854,16 +858,21 @@ void FS_SV_Rename( const char *from, const char *to ) {
 	FS_StripTrailingSeperator( to_ospath );
 	FS_StripTrailingSeperator( from_ospath );
 
-	f = fopen( from_ospath, "rb" );
-	if (f) {
-		fclose( f );
+	if(FS_FileExistsOSPath( from_ospath ))
+	{
 		if ( fs_debug->integer ) {
 			Sys_Print(va("^4FS_Rename: %s --> %s\n", from_ospath, to_ospath ));
 		}
 		if (rename( from_ospath, to_ospath )) {
 			// Failed, try copying it and deleting the original
-			FS_CopyFile ( from_ospath, to_ospath );
-			FS_RemoveOSPath ( from_ospath );
+			FS_RemoveOSPath( to_ospath );
+			if(FS_FileExistsOSPath( to_ospath ) == qfalse)
+			{
+				FS_CopyFile ( from_ospath, to_ospath );
+				if(FS_FileExistsOSPath( to_ospath ) == qtrue){
+					FS_RemoveOSPath ( from_ospath );
+				}
+			}
 		}
 	}
 }
@@ -2023,6 +2032,76 @@ int FS_WriteFile( const char *qpath, const void *buffer, int size ) {
 }
 
 
+/*
+============
+FS_WriteFileOSPath
+
+Filename are reletive to the quake search path
+============
+*/
+int FS_WriteFileOSPath(char *ospath, const void *buffer, int size ) {
+
+	FILE *fh;
+	int		block, remaining;
+	int		written;
+	byte	*buf;
+	int		tries;
+	mvabuf;
+
+	if ( !ospath || !buffer ) {
+		Com_Error( ERR_FATAL, "FS_WriteFileOSPath: NULL parameter" );
+		return -1;
+	}
+
+	if ( fs_debug->integer ) {
+		Sys_Print(va("FS_WriteFileOSPath: %s\n", ospath ));
+	}
+
+	FS_ReplaceSeparators(ospath);
+	FS_StripTrailingSeperator( ospath );
+
+	if( FS_CreatePath( (char*)ospath ) ) {
+		return 0;
+	}
+
+	fh = fopen( ospath, "wb" );
+	if ( !fh ) {
+		Com_Printf( "Failed to open %s\n", ospath );
+		return -1;
+	}
+
+	buf = (byte *)buffer;
+
+	remaining = size;
+	tries = 0;
+
+	while (remaining) {
+		block = remaining;
+		written = fwrite (buf, 1, block, fh);
+		if (written == 0) {
+			if (!tries) {
+				tries = 1;
+			} else {
+				Com_Printf( "FS_WriteFileOSPath: 0 bytes written\n" );
+				return 0;
+			}
+		}
+
+		if (written == -1) {
+			Com_Printf( "FS_WriteFileOSPath: -1 bytes written\n" );
+			return 0;
+		}
+
+		remaining -= written;
+		buf += written;
+	}
+
+	fclose( fh );
+
+	return size;
+
+}
+
 
 
 /*
@@ -3061,7 +3140,7 @@ void FS_AddIwdFilesForGameDirectory(const char *path, const char *dir)
 			}
 			islocalized = qtrue;
 		}else{
-		    if ( !Q_stricmp(dir, BASEGAME) && !Q_stricmp(path, fs_basepath->string) && Q_stricmpn(sorted[i], "iw_", 3) && Q_stricmpn(sorted[i], "xiceops_", 7))
+		    if ( !Q_stricmp(dir, BASEGAME) && !Q_stricmp(path, fs_basepath->string) && Q_stricmpn(sorted[i], "iw_", 3) && Q_stricmpn(sorted[i], "xbase_", 6))
 			{
 				Com_PrintWarning("WARNING: Invalid IWD %s in \\main.\n", sorted[i]);
 				continue;

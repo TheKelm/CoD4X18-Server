@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -707,6 +707,11 @@ __optimize3 __regparm1 void SVC_Status( netadr_t *from ) {
 	char infostring[MAX_INFO_STRING];
 	mvabuf;
 
+	// Prevent using getstatus as an amplifier
+	if ( SVC_RateLimitAddress( from, 2, sv_queryIgnoreTime->integer*1000 ) ) {
+	//	Com_DPrintf( "SVC_Status: rate limit from %s exceeded, dropping request\n", NET_AdrToString( *from ) );
+		return;
+	}
 
 
 	// Allow getstatus to be DoSed relatively easily, but prevent
@@ -716,11 +721,6 @@ __optimize3 __regparm1 void SVC_Status( netadr_t *from ) {
 		return;
 	}
 
-	// Prevent using getstatus as an amplifier
-	if ( SVC_RateLimitAddress( from, 2, sv_queryIgnoreTime->integer*1000 ) ) {
-	//	Com_DPrintf( "SVC_Status: rate limit from %s exceeded, dropping request\n", NET_AdrToString( *from ) );
-		return;
-	}
 
 
 	if(strlen(SV_Cmd_Argv(1)) > 128)
@@ -1116,6 +1116,13 @@ void SVC_SourceEngineQuery_Info( netadr_t* from, const char* challengeStr, const
 	
 	if(!masterserver)
 	{
+	
+		// Prevent using getstatus as an amplifier
+		if ( SVC_RateLimitAddress( from, 4, sv_queryIgnoreTime->integer*1000 )) {
+			//	Com_DPrintf( "SVC_Info: rate limit from %s exceeded, dropping request\n", NET_AdrToString( *from ) );
+			return;
+		}
+		
 		// Allow getstatus to be DoSed relatively easily, but prevent
 		// excess outbound bandwidth usage when being flooded inbound
 		if ( SVC_RateLimit( &querylimit.infoBucket, 100, 100000 ) ) {
@@ -1124,11 +1131,6 @@ void SVC_SourceEngineQuery_Info( netadr_t* from, const char* challengeStr, const
 		}
 		
 		
-		// Prevent using getstatus as an amplifier
-		if ( SVC_RateLimitAddress( from, 4, sv_queryIgnoreTime->integer*1000 )) {
-			//	Com_DPrintf( "SVC_Info: rate limit from %s exceeded, dropping request\n", NET_AdrToString( *from ) );
-			return;
-		}
 	}
 
 	MSG_Init(&msg, buf, sizeof(buf));
@@ -2994,7 +2996,6 @@ void SV_PreLevelLoad(){
 void SV_PostLevelLoad(){
 	PHandler_Event(PLUGINS_ONSPAWNSERVER, NULL);
 	sv.frameusec = 1000000 / sv_fps->integer;
-	sv.serverId = com_frameTime;
 }
 
 void SV_BuildXAssetCSString()
@@ -3112,10 +3113,10 @@ void SV_MapRestart( qboolean fastRestart ){
 		return;
 	}
 
-	SV_PreFastRestart();
-
 	if(com_frameTime == sv.serverId)
 		return;
+
+	SV_PreFastRestart();
 
 	// connect and begin all the clients
 	for ( client = svs.clients, i = 0 ; i < sv_maxclients->integer ; i++, client++ ) {
@@ -3140,11 +3141,7 @@ void SV_MapRestart( qboolean fastRestart ){
 
 	svs.snapFlagServerBit ^= 4;
 
-	sv_serverId = (0xf0 & sv_serverId) + ((sv_serverId + 1) & 0xf);
-
-	Cvar_SetInt(sv_serverid, sv_serverId);
-
-	sv.serverId = com_frameTime;
+	SV_GenerateServerId();
 
 	sv.state = SS_LOADING;
 	sv.restarting = qtrue;
@@ -3677,4 +3674,12 @@ void SV_WriteChecksumInfo(msg_t* msg, const char* filename)
 {
     MSG_WriteLong(msg, 0);
     msg->cursize += FS_WriteChecksumInfo(filename, msg->data + msg->cursize, msg->maxsize - msg->cursize);
+}
+
+void SV_GenerateServerId()
+{
+
+    sv.serverId = com_frameTime;
+    Cvar_SetInt(sv_serverid, sv.serverId);
+
 }

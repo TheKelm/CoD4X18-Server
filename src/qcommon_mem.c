@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -25,11 +25,7 @@
 #include "qcommon_mem.h"
 #include "qcommon.h"
 
-#ifdef COD4X17A
-    #define MEM_SIZE 150 //Megabyte
-#else
-    cvar_t* com_hunkMegs;
-#endif
+cvar_t* com_hunkMegs;
 
 
 void* Mem_AlignedAlloc(unsigned int align, unsigned int size)
@@ -49,12 +45,8 @@ void Mem_Init()
 
     void *memory;
     int sizeofmemory;
-#ifdef COD4X17A
-    sizeofmemory = 1024*1024*MEM_SIZE;
-#else
     com_hunkMegs = Cvar_RegisterInt("com_hunkMegs", 250, 150, 600, CVAR_LATCH, "Number of megabytes allocated for the hunk memory");
     sizeofmemory = 1024*1024 * (com_hunkMegs->integer);
-#endif
     memory = Mem_AlignedAlloc(0x1000, sizeofmemory);
     memset(memory, 0, sizeofmemory);
     memset((void*)0x1407e7a0, 0, 0x21C);

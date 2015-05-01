@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -31,11 +31,10 @@
 #include "sys_net.h"
 #include "server.h"
 #include "net_game_conf.h"
-#include "sha256.h"
 #include "punkbuster.h"
 #include "net_game.h"
 #include "g_sv_shared.h"
-#include "sec_main.h"
+#include "sec_crypto.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -133,11 +132,12 @@ void Auth_WipeSessionId(const char* username)
 
 int Auth_Authorize(const char *login, const char *password){
     int i;
+    unsigned long sizeofhash;
     char hstring[256];
-    const char *sha256;
+    char sha256[129];
     authData_admin_t *user;
     int id = -1;
-    
+
     for(i = 0, user = auth_admins.admins; i < MAX_AUTH_ADMINS; i++, user++){
 		if(*user->username && !Q_stricmp(user->username,login))
 		{
@@ -152,11 +152,17 @@ int Auth_Authorize(const char *login, const char *password){
     
     Com_sprintf(hstring, sizeof(hstring), "%s.%s", password, user->salt);
 
-    sha256 = Com_SHA256(hstring);
+    sizeofhash = sizeof(sha256);
+
+    if(!Sec_HashMemory(SEC_HASH_SHA256, hstring, strlen(hstring), sha256, &sizeofhash, qfalse))
+    {
+        return -1;
+    }
 
     if(Q_strncmp(user->sha256, sha256, 128))
+    {
 	return -1;
-
+    }
     return id;
 }
 
@@ -336,16 +342,15 @@ authData_admin_t* Auth_GetAdminFromIndex( int index )
 
 void Auth_ChangeAdminPassword( int uid, const char* password ){
 
-	const char* sha256;
+	char sha256[129];
 	byte buff[129];
 	char salt[65];
-	unsigned long size = sizeof(salt);
+	unsigned long size;
+	char pwsalt[1024];
 	authData_admin_t *user, *user2;
 	int i;
 	//int uid = -1;
-	mvabuf;
 
-	
 	if(!password || strlen(password) < 6){
 		Com_Printf("Error: the new password must have at least 6 characters\n");
 		return;
@@ -360,15 +365,27 @@ void Auth_ChangeAdminPassword( int uid, const char* password ){
 	}
 	if(user == NULL){
 	    Com_Printf("Error: unknown admin @%d!\n",uid);
+	    NV_ProcessEnd();
 	    return;
 	}
 
 
 	Com_RandomBytes(buff, sizeof(buff));
 
-	Sec_HashMemory(SEC_HASH_SHA256,buff,sizeof(buff),salt,&size,qfalse);
 
-	sha256 = Com_SHA256(va("%s.%s", password, salt));
+	size = sizeof(salt);
+	if(!Sec_HashMemory(SEC_HASH_SHA256,buff,sizeof(buff),salt,&size,qfalse))
+	{
+	    Com_PrintError("Auth_ChangeAdminPassword: Internal SHA error\n");
+	}
+
+	Com_sprintf(pwsalt, sizeof(pwsalt), "%s.%s", password, salt);
+
+	size = sizeof(sha256);
+	if(!Sec_HashMemory(SEC_HASH_SHA256, pwsalt, strlen(pwsalt), sha256, &size, qfalse))
+	{
+	    Com_PrintError("Auth_ChangeAdminPassword: Internal SHA error\n");
+	}
 
 	Q_strncpyz(user->sha256, sha256, sizeof(user->sha256));
 	Q_strncpyz(user->salt, (char *)salt, sizeof(user->salt));

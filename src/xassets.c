@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -174,7 +174,6 @@ int DB_GetXAssetStdCount(XAssetType_t type)
 }
 
 
-#ifndef COD4X17A
 
 qboolean DB_XAssetNoAlloc(XAssetType_t i)
 {
@@ -386,7 +385,7 @@ void XAssets_PatchLimits(){
 		Com_Error(ERR_FATAL,"XAssets_PatchLimits: Failed to change memory to read only\n");
 	}
 }
-#endif
+
 
 typedef struct
 {
@@ -731,7 +730,6 @@ void DB_CountXAssets(int *count, int len ,qboolean a4)
 */
 }
 
-#ifndef COD4X17A
 
 void DB_BuildOverallocatedXAssetList(char* configstring, int len)
 {
@@ -767,7 +765,6 @@ void DB_BuildOverallocatedXAssetList(char* configstring, int len)
 }
 
 
-#endif
 
 
 void XAssetUsage_f()

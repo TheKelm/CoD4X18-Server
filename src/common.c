@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -46,7 +46,7 @@
 #include "hl2rcon.h"
 #include "sv_auth.h"
 #include "punkbuster.h"
-#include "sec_init.h"
+#include "sec_common.h"
 #include "sys_cod4loader.h"
 #include "httpftp.h"
 #include "huffman.h"
@@ -55,7 +55,7 @@
 #include <setjmp.h>
 #include <stdarg.h>
 #include <time.h>
-
+#include <ctype.h>
 
 
 unsigned long long com_uFrameTime = 0;
@@ -654,9 +654,7 @@ void Com_InitGamefunctions()
     FS_CopyCvars();
     Com_CopyCvars();
     SV_CopyCvars();
-#ifndef COD4X17A
     XAssets_PatchLimits();  //Patch several asset-limits to higher values
-#endif
     SL_Init();
     Swap_Init();
 
@@ -751,7 +749,7 @@ void Com_Init(char* commandLine){
 
 
     static char creator[16];
-    char creatorname[37];
+    char creatorname[36];
 	mvabuf;
 
     unsigned int	qport;
@@ -846,16 +844,15 @@ void Com_Init(char* commandLine){
     creatorname[24] = ':';
     creatorname[25] = '/';
     creatorname[26] = '/';
-    creatorname[27] = 'i';
-    creatorname[28] = 'c';
-    creatorname[29] = 'e';
-    creatorname[30] = 'o';
-    creatorname[31] = 'p';
-    creatorname[32] = 's';
-    creatorname[33] = '.';
-    creatorname[34] = 'i';
-    creatorname[35] = 'n';
-    creatorname[36] = '\0';
+    creatorname[27] = 'c';
+    creatorname[28] = 'o';
+    creatorname[29] = 'd';
+    creatorname[30] = '4';
+    creatorname[31] = 'x';
+    creatorname[32] = '.';
+    creatorname[33] = 'm';
+    creatorname[34] = 'e';
+    creatorname[35] = '\0';
 
     Cvar_RegisterString (creator, creatorname, CVAR_ROM | CVAR_SERVERINFO , "");
 

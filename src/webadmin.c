@@ -681,11 +681,7 @@ void Webadmin_BuildMessage(msg_t* msg, const char* username, qboolean invalidlog
 			XO1("div","class","container");
 				XO1("div","class","page-header");
 					XO("h1");
-						#ifdef COD4X17A
-							XA("CoD4 X v1.7a");
-						#else
-							XA("CoD4 X v1.8");
-						#endif
+						XA("CoD4 X v1.8");
 						XO("small");
 							XA(" Web Server");
 						XC;

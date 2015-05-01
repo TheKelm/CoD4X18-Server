@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -113,7 +113,7 @@ typedef int SOCKET;
 #endif
 
 
-#define IPEFF_EF 0xB8
+#define IPEFF_EF 0x38
 
 
 #define	MAX_IPS		32
@@ -1096,6 +1096,7 @@ int NET_IPSocket( char *net_interface, int port, int *err, qboolean tcp) {
 //	struct	linger			so_linger;
 
 	*err = 0;
+	tos = tos << 2;
 
 	if( net_interface ) {
 		if(tcp)

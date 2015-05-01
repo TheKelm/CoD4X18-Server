@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -22,9 +22,8 @@
 #define SEC_CRYPTO_H
 
 
-//#include "plugin_handler.h"
 #include "q_shared.h"
-#include "../lib_tomcrypt/main.h"
+#include "tomcrypt/tomcrypt.h"
 
 
 typedef enum{

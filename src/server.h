@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
     Copyright (C) 1999-2005 Id Software, Inc.
 
     This file is part of CoD4X17a-Server source code.
@@ -37,9 +37,7 @@
 #include "cvar.h"
 #include "net_game_conf.h"
 
-#ifndef COD4X17A
 #include "net_reliabletransport.h"
-#endif
 
 #include <time.h>
 
@@ -51,10 +49,6 @@
 
 #define SERVERHEADER_STRUCT_ADDR 0x13f18f80
 #define svsHeader (*((svsHeader_t*)(SERVERHEADER_STRUCT_ADDR)))
-
-#define SERVERID_ADDR 0x8c51720
-#define sv_serverId (*(int*)(SERVERID_ADDR))
-
 
 
 // MAX_CHALLENGES is made large to prevent a denial
@@ -443,9 +437,6 @@ typedef struct {//0x8c51780
 
 typedef struct {
 	unsigned long long	nextHeartbeatTime;
-#ifdef COD4X17A
-	challenge_t		challenges[MAX_CHALLENGES];	// to prevent invalid IPs from connecting
-#endif
 	netadr_t		redirectAddress;			// for rcon return messages
 	netadr_t		authorizeAddress;			// ??? for rcon return messages
 	client_t		*redirectClient;		//used for SV_ExecuteRemoteControlCmd()
@@ -607,7 +598,7 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK, qb
 void SV_SendClientSnapshot( client_t *cl );
 
 qboolean SV_Acceptclient(int);
-client_t* SV_ReadPackets(netadr_t *from, unsigned int qport);
+client_t* SV_ReadPackets(netadr_t *from, unsigned short qport);
 void SV_GetVoicePacket(netadr_t *from, msg_t* msg);
 void SV_UserVoice(client_t* cl, msg_t* msg);
 void SV_PreGameUserVoice(client_t* cl, msg_t* msg);
@@ -822,7 +813,10 @@ qboolean SV_SetupReliableMessageProtocol(client_t* client);
 void SV_DisconnectReliableMessageProtocol(client_t* client);
 void SV_ReceiveReliableMessages(client_t* client);
 void SV_SendReliableServerCommand(client_t* client, msg_t *msg);
+void SV_GenerateServerId( );
 qboolean SV_RequestStats(client_t* client);
+void SV_GetUsername(int clientNum, char* name, int maxlen);
+void SV_CalculateChecksums();
 #ifdef COD4X18UPDATE
 void SV_ConnectWithUpdateProxy(client_t *cl);
 #endif

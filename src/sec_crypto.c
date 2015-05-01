@@ -1,6 +1,6 @@
 /*
 ===========================================================================
-    Copyright (C) 2010-2013  Ninja and TheKelm of the IceOps-Team
+    Copyright (C) 2010-2013  Ninja and TheKelm
 
     This file is part of CoD4X17a-Server source code.
 
@@ -20,7 +20,7 @@
 */
 
 #include "sec_crypto.h"
-#include "sec_main.h"
+#include "sec_common.h"
 
 struct ltc_hash_descriptor sec_hashes[SEC_HASH_SIZE__];
 
