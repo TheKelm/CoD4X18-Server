@@ -150,19 +150,19 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	challenge = atoi( Info_ValueForKey( userinfo, "challenge" ) );
 	qport = atoi( Info_ValueForKey( userinfo, "qport" ) );
 
-
-
 	if(challenge != NET_CookieHash(from))
 	{
 		NET_OutOfBandPrint( NS_SERVER, from, "error\nNo or bad challenge for address.\n" );
 		return;
 	}
 
+	version = atoi( Info_ValueForKey( userinfo, "protocol" ));
+
 #ifdef DEVRELEASE
 	char* xversion;
 	
 	xversion = Info_ValueForKey( userinfo, "xver");
-	if(Q_stricmp(xversion, COD4X_SUBVERSION))
+	if(Q_stricmp(xversion, COD4X_SUBVERSION) && version > 6)
 	{
 		NET_OutOfBandPrint( NS_SERVER, from, "error\nBad subversion. Server expects subversion %s but client is %s\n", COD4X_SUBVERSION, xversion );
 		return;		
@@ -217,7 +217,7 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 
 	Q_strncpyz(pbguid, /*Info_ValueForKey( userinfo, "pbguid" )*/"[I:0:0]", sizeof(pbguid));
 
-	version = atoi( Info_ValueForKey( userinfo, "protocol" ));
+
 	if ( version != sv_protocol->integer ) {
 
 #ifdef COD4X18UPDATE
@@ -226,11 +226,20 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 			Com_Printf("Have to fix up old client which reports version %d\n", version);
 		}else{
 #endif
-			NET_OutOfBandPrint( NS_SERVER, from, "error\nThis server requires protocol version: %d\n"
+			if(version < 8)
+			{
+				NET_OutOfBandPrint( NS_SERVER, from, "error\nThis server requires protocol version: %d\n"
+							    "Please install the inofficial cod4x-update you can find at http://cod4x.me\n",
+							    sv_protocol->integer);
+			}else{
+				NET_OutOfBandPrint( NS_SERVER, from, "error\nThis server requires protocol version: %d\n"
 							    "Please restart CoD4 and see on the main-menu if a new update is available\n"
 							    "{OOBErrorParser protocolmismatch CoD4X" Q3_VERSION " %d}", sv_protocol->integer, sv_protocol->integer);
+
+			}
 			Com_Printf("rejected connect from version %i\n", version);
 			return;
+
 #ifdef COD4X18UPDATE
 		}
 #endif
@@ -361,13 +370,21 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 
 
 #ifdef COD4X18UPDATE
-	if(version == sv_protocol->integer || newcl->challenge != challenge || newcl->state != CS_CONNECTED)
+	if(version < 7 && newcl->challenge == challenge && newcl->state && newcl->updateconnOK)
 	{
 		Com_Memset(newcl, 0x00, sizeof(client_t));
-	}
-#else
-	Com_Memset(newcl, 0x00, sizeof(client_t));
+		newcl->updateconnOK = qtrue;
+	}else{
 #endif
+
+	Com_Memset(newcl, 0x00, sizeof(client_t));
+
+
+#ifdef COD4X18UPDATE
+	}
+#endif
+
+
 
 
 	newcl->authentication = 0;
@@ -421,18 +438,31 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 	}else{
 		newcl->needupdate = qfalse;
 	}
+
+	if(!newcl->needupdate)
+	{
 #endif
+		// get the game a chance to reject this connection or modify the userinfo
+		denied2 = ClientConnect(clientNum, newcl->clscriptid);
 
+		if ( denied2 ) {
+			NET_OutOfBandPrint( NS_SERVER, from, "error\n%s\n", denied2 );
+			Com_Printf("Game rejected a connection: %s\n", denied2);
+			SV_FreeClientScriptId(newcl);
+			return;
+		}
 
-	// get the game a chance to reject this connection or modify the userinfo
-	denied2 = ClientConnect(clientNum, newcl->clscriptid);
+		if(SV_SetupReliableMessageProtocol(newcl) == qfalse)
+		{
+			NET_OutOfBandPrint( NS_SERVER, from, "error\nServer is out of memory\n");
+			Com_Printf("Server is out of memory. Refused to accept client %s\n", nick);
+			SV_FreeClientScriptId(newcl);
+			return;
+		}
 
-	if ( denied2 ) {
-		NET_OutOfBandPrint( NS_SERVER, from, "error\n%s\n", denied2 );
-		Com_Printf("Game rejected a connection: %s\n", denied2);
-		SV_FreeClientScriptId(newcl);
-		return;
+#ifdef COD4X18UPDATE
 	}
+#endif
 
 	// save the address
 	// init the netchan queue
@@ -441,13 +471,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 			 newcl->fragmentBuffer, sizeof(newcl->fragmentBuffer));
 
 
-	if(SV_SetupReliableMessageProtocol(newcl) == qfalse)
-	{
-		NET_OutOfBandPrint( NS_SERVER, from, "error\nServer is out of memory\n");
-		Com_Printf("Server is out of memory. Refused to accept client %s\n", nick);
-		SV_FreeClientScriptId(newcl);
-		return;
-	}
 
 	Com_Printf( "Going from CS_FREE to CS_CONNECTED for %s num %i guid %s from: %s\n", nick, clientNum, newcl->pbguid, NET_AdrToConnectionString(from));
 	
@@ -731,7 +754,12 @@ __cdecl void SV_DropClient( client_t *drop, const char *reason ) {
 	if ( drop->state <= CS_ZOMBIE ) {
 		return;     // already dropped
 	}
-
+#ifdef COD4X18UPDATE
+	if ( drop->needupdate ) {
+		drop->state = CS_ZOMBIE;
+		return;
+	}
+#endif
 	if(drop->demorecording)
 	{
 		SV_StopRecord(drop);
@@ -1512,6 +1540,10 @@ void SV_SendClientGameState( client_t *client ) {
 	byte msgBuffer[MAX_MSGLEN];
 	qboolean sapi, stats;
 
+	if(client->needupdate)
+	{
+		return;
+	}
 
 	while(client->state != CS_FREE && client->netchan.unsentFragments){
 		SV_Netchan_TransmitNextFragment(client);
