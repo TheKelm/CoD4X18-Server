@@ -452,13 +452,6 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 			return;
 		}
 
-		if(SV_SetupReliableMessageProtocol(newcl) == qfalse)
-		{
-			NET_OutOfBandPrint( NS_SERVER, from, "error\nServer is out of memory\n");
-			Com_Printf("Server is out of memory. Refused to accept client %s\n", nick);
-			SV_FreeClientScriptId(newcl);
-			return;
-		}
 
 #ifdef COD4X18UPDATE
 	}
@@ -470,7 +463,22 @@ __optimize3 __regparm1 void SV_DirectConnect( netadr_t *from ) {
 			 newcl->unsentBuffer, sizeof(newcl->unsentBuffer),
 			 newcl->fragmentBuffer, sizeof(newcl->fragmentBuffer));
 
+#ifdef COD4X18UPDATE
+	if(!newcl->needupdate)
+	{
+#endif
 
+		if(SV_SetupReliableMessageProtocol(newcl) == qfalse)
+		{
+			NET_OutOfBandPrint( NS_SERVER, from, "error\nServer is out of memory\n");
+			Com_Printf("Server is out of memory. Refused to accept client %s\n", nick);
+			SV_FreeClientScriptId(newcl);
+			return;
+		}
+
+#ifdef COD4X18UPDATE
+	}
+#endif
 
 	Com_Printf( "Going from CS_FREE to CS_CONNECTED for %s num %i guid %s from: %s\n", nick, clientNum, newcl->pbguid, NET_AdrToConnectionString(from));
 	
